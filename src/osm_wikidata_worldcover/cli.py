@@ -23,6 +23,10 @@ def build(
     region: Annotated[
         list[str] | None, typer.Option(help="Region stem to build; repeatable.")
     ] = None,
+    regions_file: Annotated[
+        Path | None,
+        typer.Option(help="File of region stems, one per line; # starts a comment."),
+    ] = None,
     threshold: Annotated[float, typer.Option(help="Minimum dominant-class share.")] = 0.8,
     max_area_km2: Annotated[
         float, typer.Option(help="Refuse polygons larger than this, in km2.")
@@ -49,7 +53,8 @@ def build(
         source_revision=revision,
         dataset_version=dataset_version,
     )
-    report = run_build(config, regions=region, keep_tiles=keep_tiles, progress=typer.echo)
+    regions = list(region or []) + _read_regions(regions_file)
+    report = run_build(config, regions=regions or None, keep_tiles=keep_tiles, progress=typer.echo)
     paths = write_dataset(report.result.frames, report.result.manifest, out, dataset_version)
 
     typer.echo(f"\nexamples: {report.result.rows:,}")
@@ -60,6 +65,14 @@ def build(
         for violation in report.result.report.violations:
             typer.echo(f"  FAILED {violation.check.value}: {violation.count}", err=True)
         raise typer.Exit(1)
+
+
+def _read_regions(path: Path | None) -> list[str]:
+    """Read region stems from ``path``, ignoring blanks and ``#`` comments."""
+    if path is None:
+        return []
+    lines = (line.split("#", 1)[0].strip() for line in path.read_text().splitlines())
+    return [line for line in lines if line]
 
 
 @app.command()

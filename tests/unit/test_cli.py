@@ -97,3 +97,51 @@ def test_info_summarises_a_manifest(tmp_path) -> None:
     assert outcome.exit_code == 0
     assert "Tree cover" in outcome.output
     assert "examples: 4" in outcome.output
+
+
+def test_build_reads_regions_from_a_file(tmp_path, monkeypatch) -> None:
+    """A global run names hundreds of regions; a file beats a giant argv."""
+    seen: dict[str, object] = {}
+    result = StreamedBuild(4, split_frames(frame()), MANIFEST, ValidationReport(4))
+
+    def fake_build(config, regions=None, **kwargs):
+        seen["regions"] = regions
+        return type("R", (), {"result": result})()
+
+    monkeypatch.setattr(cli, "run_build", fake_build)
+    listing = tmp_path / "regions.txt"
+    listing.write_text("alpha-latest\nbeta-latest\n\n# a comment\ngamma-latest\n")
+    outcome = runner.invoke(
+        cli.app,
+        ["build", "--out", str(tmp_path), "--cache", str(tmp_path), "--regions-file", str(listing)],
+    )
+    assert outcome.exit_code == 0, outcome.output
+    assert seen["regions"] == ["alpha-latest", "beta-latest", "gamma-latest"]
+
+
+def test_regions_file_and_region_flags_combine(tmp_path, monkeypatch) -> None:
+    seen: dict[str, object] = {}
+    result = StreamedBuild(4, split_frames(frame()), MANIFEST, ValidationReport(4))
+
+    def fake_build(config, regions=None, **kwargs):
+        seen["regions"] = regions
+        return type("R", (), {"result": result})()
+
+    monkeypatch.setattr(cli, "run_build", fake_build)
+    listing = tmp_path / "regions.txt"
+    listing.write_text("alpha-latest\n")
+    runner.invoke(
+        cli.app,
+        [
+            "build",
+            "--out",
+            str(tmp_path),
+            "--cache",
+            str(tmp_path),
+            "--regions-file",
+            str(listing),
+            "--region",
+            "beta-latest",
+        ],
+    )
+    assert seen["regions"] == ["beta-latest", "alpha-latest"]
