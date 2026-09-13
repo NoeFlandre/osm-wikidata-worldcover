@@ -44,6 +44,15 @@ uv run oww verify data/out/v1.0.0
 uv run oww info   data/out/v1.0.0
 ```
 
+A global run is CPU-bound and single-threaded, so it can be split across
+processes and assembled once:
+
+```bash
+uv run oww build --regions-file regions-a.txt --cache data/w0 --out data/w0/out
+uv run oww build --regions-file regions-b.txt --cache data/w1 --out data/w1/out
+uv run oww assemble data/w0/shards data/w1/shards --out data/out
+```
+
 ## Honesty about what the label means
 
 WorldCover classifies the ground, and its pixels are 10 m. The label says what

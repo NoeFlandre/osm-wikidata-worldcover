@@ -34,8 +34,11 @@ uv run oww build --region luxembourg-latest --out data/out
 uv run oww build --out data/out --cache data/cache --cached-tiles 1500
 
 # labelling is CPU-bound and single-threaded, so a global run can be split
-# across processes by giving each a disjoint region list and its own cache
+# across processes by giving each a disjoint region list and its own cache,
+# then assembling the shards once
 uv run oww build --regions-file regions-a.txt --cache data/w0 --out data/w0/out
+uv run oww build --regions-file regions-b.txt --cache data/w1 --out data/w1/out
+uv run oww assemble data/w0/shards data/w1/shards --out data/out
 
 uv run oww verify  data/out/v1.0.0     # re-check every guarantee
 uv run oww info    data/out/v1.0.0     # class and language distribution
