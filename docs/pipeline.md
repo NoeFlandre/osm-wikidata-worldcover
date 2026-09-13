@@ -48,10 +48,29 @@ real bug, and `OverlappingCoverageError` says so rather than clamping.
 
 ## Assembling the dataset
 
-Two different duplicates are removed. Geofabrik extracts overlap, so one OSM
-object can appear under several `polygon_id`s — those collapse to one. Separately,
-distinct objects can carry byte-identical text under the same label — those
-collapse too.
+Three different problems are resolved, and conflating them would get at least
+one wrong:
 
-Splits are assigned last, on H3 cells rather than rows (ADR 0003), then the
-whole frame is re-validated before anything is written.
+1. Geofabrik extracts overlap, so one OSM object appears under several
+   `polygon_id`s. One region is chosen per object.
+2. Distinct objects can carry byte-identical text under the same label.
+3. One article can describe several distant places, which fall in different
+   cells and so different splits. The split holding most of that document's
+   rows keeps them; the rest are dropped, because moving them would break the
+   geographic blocking.
+
+### Nothing is held whole
+
+A global build is several times the memory of the machine that produces it —
+measured at 4.9 KB per row. So:
+
+- row-local work (H3 cell, split, duplicate keys) happens **one shard at a
+  time**, bounded by a single region;
+- the global work — de-duplication and ordering — is left to **DuckDB over
+  files**;
+- each split is **streamed** from DuckDB to Parquet in Arrow batches;
+- validation reads the written files **back** a batch at a time, so what is
+  checked is what was actually published.
+
+Rebuilding the same inputs still produces byte-identical files, which is the
+cheapest check that none of this changed the data.
