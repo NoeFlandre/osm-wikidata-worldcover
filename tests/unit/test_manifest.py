@@ -41,7 +41,9 @@ def test_class_distribution_is_labelled_and_ordered_by_code(counts) -> None:
 
 
 def test_language_distribution_is_ordered_by_count_then_name(counts) -> None:
-    counts.language_distribution = {"de": 30, "fr": 30, "en": 70}
+    # "fr" is inserted before "de" but must come after it, so the tie-break is
+    # really on the name rather than on insertion order.
+    counts.language_distribution = {"fr": 30, "de": 30, "en": 70}
     languages = build(counts, settings={})["language_distribution"]
     assert [entry["language"] for entry in languages] == ["en", "de", "fr"]
 
@@ -91,3 +93,51 @@ def test_deduplication_counts_are_reported(counts) -> None:
 
 def test_deduplication_defaults_to_empty(counts) -> None:
     assert build(counts, settings={})["deduplication"] == {}
+
+
+def test_manifest_keys_are_the_published_contract(counts) -> None:
+    """The manifest is read by consumers, so its key names are an interface.
+
+    Pinning them here means renaming one is a deliberate, visible change rather
+    than something that slips out in a release.
+    """
+    manifest = build(counts, settings={"dominance_threshold": 0.8})
+    assert set(manifest) == {
+        "counts",
+        "class_distribution",
+        "language_distribution",
+        "dominant_fraction",
+        "geographic_coverage",
+        "rejections",
+        "deduplication",
+        "settings",
+    }
+    assert set(manifest["counts"]) == {"examples", "polygons", "documents"}
+    for group in manifest["counts"].values():
+        assert set(group) == {"train", "validation", "test", "total"}
+    assert set(manifest["class_distribution"][0]) == {"code", "label", "examples", "share"}
+    assert set(manifest["language_distribution"][0]) == {"language", "examples", "share"}
+    assert set(manifest["geographic_coverage"]) == {"h3_cells", "regions", "bbox"}
+    assert set(manifest["geographic_coverage"]["bbox"]) == {
+        "min_lon",
+        "min_lat",
+        "max_lon",
+        "max_lat",
+    }
+
+
+def test_per_split_counts_keep_a_fixed_order(counts) -> None:
+    """Order is part of the contract too: a manifest diff should stay readable."""
+    manifest = build(counts, settings={})
+    assert list(manifest["counts"]["examples"]) == ["train", "validation", "test", "total"]
+
+
+def test_totals_are_the_sum_of_the_splits(counts) -> None:
+    counts.examples = {"train": 7, "validation": 2, "test": 1}
+    assert build(counts, settings={})["counts"]["examples"]["total"] == 10
+
+
+def test_a_missing_split_counts_as_zero(counts) -> None:
+    counts.polygons = {"train": 5}
+    reported = build(counts, settings={})["counts"]["polygons"]
+    assert reported == {"train": 5, "validation": 0, "test": 0, "total": 5}
