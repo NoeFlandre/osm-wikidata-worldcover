@@ -36,11 +36,11 @@ jobs:
       - name: Architecture boundaries
         run: uv run lint-imports
 
-      - name: Unit and property tests
-        run: uv run pytest tests/unit tests/property --cov --cov-report=json -q
-
-      - name: Acceptance tests
-        run: uv run pytest tests/acceptance -q
+      # One coverage pass over every suite: CRAP is computed from it, and
+      # splitting the runs would make code covered only by the acceptance
+      # tests look untested.
+      - name: Tests (unit, property, acceptance)
+        run: uv run pytest --cov --cov-report=json -q
 
       - name: CRAP score
         run: uv run python scripts/crap.py src
@@ -56,7 +56,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv sync --frozen
+      - name: Install dependencies
+        run: uv sync --frozen
       - name: Mutate the domain logic
         run: uv run mutmut run
 
