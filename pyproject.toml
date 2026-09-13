@@ -68,6 +68,11 @@ markers = [
     "integration: needs real external data (network or large local files)",
     "slow: long running",
 ]
+filterwarnings = [
+    "error",
+    # rasterio's own transform helper, not our call site.
+    "ignore:Use `@` matmul instead:PendingDeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src/osm_wikidata_worldcover"]

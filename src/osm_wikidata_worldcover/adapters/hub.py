@@ -1,0 +1,66 @@
+"""Fetch the source dataset from the Hugging Face Hub.
+
+Only the files a run actually reads are downloaded, region by region, so a
+partial build never needs the full ~21 GB snapshot. Every download is pinned to
+one commit so a rebuild sees byte-identical inputs.
+"""
+
+from pathlib import Path
+
+from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.utils import EntryNotFoundError
+
+from osm_wikidata_worldcover.adapters.source import PROJECTS
+
+__all__ = ["region_files", "resolve_revision", "snapshot_region", "split_repo_path"]
+
+
+def region_files(stem: str) -> list[str]:
+    """Return every repository path holding data for region ``stem``."""
+    return [
+        f"polygons/{stem}.parquet",
+        f"polygon_document_links/{stem}.parquet",
+        *[f"{project}/documents/{stem}.parquet" for project in PROJECTS],
+    ]
+
+
+def split_repo_path(path: str) -> tuple[str, str]:
+    """Split a repository path into its table directory and region stem."""
+    head, _, name = path.rpartition("/")
+    return head, name.removesuffix(".parquet")
+
+
+def resolve_revision(repo_id: str, revision: str | None = None) -> str:
+    """Return the commit sha that ``revision`` names, pinning the build to it."""
+    info = HfApi().dataset_info(repo_id, revision=revision)
+    return info.sha
+
+
+def list_region_stems(repo_id: str, revision: str) -> list[str]:
+    """Return every region present in the repository, sorted."""
+    files = HfApi().list_repo_files(repo_id, repo_type="dataset", revision=revision)
+    return sorted(
+        split_repo_path(f)[1] for f in files if f.startswith("polygons/") and f.endswith(".parquet")
+    )
+
+
+def snapshot_region(repo_id: str, revision: str, stem: str, dest: Path) -> list[Path]:
+    """Download region ``stem`` into ``dest``, mirroring the repository layout.
+
+    Files the repository does not publish for this region -- Wikivoyage sidecars
+    most often -- are skipped rather than treated as failures.
+    """
+    downloaded: list[Path] = []
+    for path in region_files(stem):
+        try:
+            local = hf_hub_download(
+                repo_id,
+                path,
+                repo_type="dataset",
+                revision=revision,
+                local_dir=dest,
+            )
+        except EntryNotFoundError:
+            continue
+        downloaded.append(Path(local))
+    return downloaded

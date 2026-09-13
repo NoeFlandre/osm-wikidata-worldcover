@@ -1,0 +1,277 @@
+"""Turn one region's source tables into labelled text examples.
+
+The unit of work is a region, and within it a WorldCover tile: polygons are
+grouped by the tiles they touch so each ~94 MB raster is fetched once, used for
+every polygon over it, and then discarded. Nothing here holds more than one
+region and its tiles in memory.
+
+Labelling and example assembly are kept apart. Labelling answers "what covers
+this polygon"; assembly answers "which articles describe it". Only polygons
+that survive the first question reach the second, so the expensive text join
+runs on a fraction of the rows.
+"""
+
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import geopandas as gpd
+import pandas as pd
+import shapely
+
+from osm_wikidata_worldcover.adapters.source import RegionTables
+from osm_wikidata_worldcover.adapters.worldcover import (
+    TileNotPublishedError,
+    WorldCoverTiles,
+    class_coverage,
+)
+from osm_wikidata_worldcover.config import Config
+from osm_wikidata_worldcover.domain import nomenclature
+from osm_wikidata_worldcover.domain.dominance import (
+    DominanceOutcome,
+    OverlappingCoverageError,
+    RejectionReason,
+    decide,
+)
+from osm_wikidata_worldcover.domain.geometry import is_usable_polygon
+from osm_wikidata_worldcover.domain.text import is_usable, normalise, word_count
+from osm_wikidata_worldcover.domain.tiling import Tile, tiles_for_bbox
+
+__all__ = ["RegionOutcome", "label_polygons", "prepare_polygons", "run_region", "to_examples"]
+
+
+@dataclass(slots=True)
+class RegionOutcome:
+    """What became of one region."""
+
+    stem: str
+    polygons_seen: int = 0
+    polygons_invalid: int = 0
+    polygons_accepted: int = 0
+    examples: int = 0
+    rejections: Counter[str] = field(default_factory=Counter)
+    tiles_missing: list[str] = field(default_factory=list)
+
+
+def prepare_polygons(polygons: pd.DataFrame) -> tuple[gpd.GeoDataFrame, int]:
+    """Parse the stored GeoJSON geometries and drop the unusable ones.
+
+    Returns the usable polygons and how many were discarded, so the count can
+    be reported rather than silently absorbed.
+    """
+    if len(polygons) == 0:
+        empty = gpd.GeoDataFrame(polygons.assign(geometry=[]), geometry="geometry", crs="EPSG:4326")
+        return empty, 0
+
+    geometries = shapely.from_geojson(polygons["geometry"].to_numpy())
+    frame = gpd.GeoDataFrame(
+        polygons.drop(columns=["geometry"]), geometry=geometries, crs="EPSG:4326"
+    )
+    usable = frame.geometry.map(is_usable_polygon).to_numpy()
+    return frame[usable].reset_index(drop=True), int((~usable).sum())
+
+
+def tiles_for_frame(frame: gpd.GeoDataFrame) -> list[tuple[Tile, ...]]:
+    """Return, per row, the tiles its geometry touches."""
+    return [
+        tuple(tiles_for_bbox(bounds)) for bounds in frame.geometry.bounds.itertuples(index=False)
+    ]
+
+
+def label_polygons(
+    frame: gpd.GeoDataFrame,
+    tiles: WorldCoverTiles,
+    threshold: float,
+    outcome: RegionOutcome,
+    keep_tiles: bool = False,
+) -> pd.DataFrame:
+    """Label every polygon in ``frame`` that one class dominates.
+
+    Polygons are grouped by the tiles they touch, so each raster is fetched
+    once, used for every polygon over it, and released before the next group.
+    """
+    frame = frame.assign(_tiles=tiles_for_frame(frame))
+    blocks = [
+        _process_group(group, tile_set, tiles, threshold, outcome, keep_tiles)
+        for tile_set, group in frame.groupby("_tiles", sort=True)
+    ]
+    kept = [b for b in blocks if b is not None]
+    if not kept:
+        return pd.DataFrame()
+    labelled = pd.concat(kept, ignore_index=True)
+    outcome.polygons_accepted = len(labelled)
+    return labelled
+
+
+def _process_group(
+    group: gpd.GeoDataFrame,
+    tile_set: Sequence[Tile],
+    tiles: WorldCoverTiles,
+    threshold: float,
+    outcome: RegionOutcome,
+    keep_tiles: bool,
+) -> pd.DataFrame | None:
+    """Label one group of polygons sharing a tile set, then release the tiles."""
+    try:
+        paths = _fetch(tiles, tile_set, outcome)
+        if not paths:
+            outcome.rejections[RejectionReason.NO_VALID_CLASS.value] += len(group)
+            return None
+        return _label_group(group, paths, threshold, outcome)
+    finally:
+        if not keep_tiles:
+            for tile in tile_set:
+                tiles.discard(tile)
+
+
+def _fetch(tiles: WorldCoverTiles, tile_set: Sequence[Tile], outcome: RegionOutcome) -> list[Path]:
+    """Download every published tile in ``tile_set``, noting the ones that are not.
+
+    Paths are de-duplicated: reading one raster twice would count its coverage
+    twice and make an otherwise valid polygon look doubly covered.
+    """
+    paths: dict[Path, None] = {}
+    for tile in tile_set:
+        try:
+            paths[tiles.ensure(tile)] = None
+        except TileNotPublishedError:
+            outcome.tiles_missing.append(tile.name)
+    return list(paths)
+
+
+def _label_group(
+    group: gpd.GeoDataFrame,
+    paths: Sequence[Path],
+    threshold: float,
+    outcome: RegionOutcome,
+) -> pd.DataFrame | None:
+    """Return the rows of ``group`` that a single class dominates, or ``None``."""
+    coverages = class_coverage(paths, group)
+    verdicts = [_verdict(c, threshold) for c in coverages]
+    kept = [i for i, v in enumerate(verdicts) if v.accepted]
+    _tally(verdicts, set(kept), outcome)
+    if not kept:
+        return None
+    block = group.iloc[kept].copy()
+    block["worldcover_code"] = [verdicts[i].code for i in kept]
+    block["dominant_fraction"] = [verdicts[i].fraction for i in kept]
+    block["observed_fraction"] = [sum(coverages[i].values()) for i in kept]
+    return block.drop(columns=["_tiles"])
+
+
+def _tally(verdicts: Sequence[DominanceOutcome], kept: set[int], outcome: RegionOutcome) -> None:
+    """Record why each rejected polygon was rejected."""
+    for index, verdict in enumerate(verdicts):
+        if index not in kept and verdict.reason is not None:
+            outcome.rejections[verdict.reason.value] += 1
+
+
+def _verdict(coverage: dict[int, float], threshold: float) -> DominanceOutcome:
+    """Apply the dominance rule to one polygon's coverage shares.
+
+    Shares are already relative to the polygon, so its area is 1 by construction.
+    """
+    try:
+        return decide(coverage, polygon_area=1.0, threshold=threshold)
+    except OverlappingCoverageError:
+        # Double-counted coverage means the tiles overlapped, which they must
+        # not; refuse the polygon rather than trust the arithmetic.
+        return DominanceOutcome(False, None, 0.0, RejectionReason.NO_VALID_CLASS)
+
+
+def to_examples(
+    labelled: pd.DataFrame,
+    tables: RegionTables,
+    min_words: int,
+) -> pd.DataFrame:
+    """Join labelled polygons to the articles that describe them.
+
+    One row per ``(polygon, document)`` pair, dropping documents that failed to
+    fetch or are too short to carry signal.
+    """
+    if len(labelled) == 0:
+        return pd.DataFrame()
+
+    documents = tables.documents
+    documents = documents[documents["fetch_status"] == "ok"]
+    if len(documents) == 0:
+        return pd.DataFrame()
+
+    links = tables.links[["polygon_id", "document_id"]]
+    joined = labelled.merge(links, on="polygon_id", how="inner").merge(
+        documents, on="document_id", how="inner", suffixes=("", "_doc")
+    )
+    if len(joined) == 0:
+        return pd.DataFrame()
+
+    joined["text"] = joined["full_text"].fillna("").map(normalise)
+    joined = joined[joined["text"].map(lambda t: is_usable(t, min_words))]
+    return joined.reset_index(drop=True)
+
+
+def run_region(
+    config: Config,
+    tables: RegionTables,
+    tiles: WorldCoverTiles,
+    keep_tiles: bool = False,
+) -> tuple[pd.DataFrame, RegionOutcome]:
+    """Produce every example for one region."""
+    outcome = RegionOutcome(stem=tables.stem)
+    frame, invalid = prepare_polygons(tables.polygons)
+    outcome.polygons_seen = len(tables.polygons)
+    outcome.polygons_invalid = invalid
+
+    labelled = label_polygons(frame, tiles, config.threshold, outcome, keep_tiles)
+    examples = to_examples(labelled, tables, config.min_words)
+    examples = _shape(examples)
+    outcome.examples = len(examples)
+    return examples, outcome
+
+
+OUTPUT_COLUMNS: Sequence[str] = (
+    "polygon_id",
+    "osm_type",
+    "osm_id",
+    "region",
+    "name",
+    "wikidata",
+    "document_id",
+    "project",
+    "language",
+    "title",
+    "url",
+    "text",
+    "lead_text",
+    "text_words",
+    "worldcover_code",
+    "worldcover_label",
+    "dominant_fraction",
+    "observed_fraction",
+    "lat",
+    "lon",
+    "centroid_wkt",
+    "polygon_area_m2",
+    "source_pbf",
+)
+
+
+def _shape(examples: pd.DataFrame) -> pd.DataFrame:
+    """Add derived columns and project onto the published schema."""
+    if len(examples) == 0:
+        return pd.DataFrame(columns=list(OUTPUT_COLUMNS))
+
+    examples = examples.copy()
+    examples["worldcover_label"] = examples["worldcover_code"].map(nomenclature.label_for)
+    examples["text_words"] = examples["text"].map(word_count)
+    examples["polygon_area_m2"] = examples["area_m2"]
+    examples["centroid_wkt"] = shapely.to_wkt(
+        shapely.points(examples["lon"].to_numpy(), examples["lat"].to_numpy()),
+        rounding_precision=7,
+    )
+    if "language_doc" in examples.columns:
+        examples["language"] = examples["language_doc"].fillna(examples["language"])
+    for column in OUTPUT_COLUMNS:
+        if column not in examples.columns:
+            examples[column] = None
+    return examples[list(OUTPUT_COLUMNS)]
