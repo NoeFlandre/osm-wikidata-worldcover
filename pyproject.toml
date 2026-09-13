@@ -1,7 +1,7 @@
 [project]
-name = "osm-wikidata-corine"
+name = "osm-wikidata-worldcover"
 version = "0.1.0"
-description = "Build a supervised text -> CORINE land-cover dataset from OSM polygons linked to Wikipedia/Wikivoyage documents."
+description = "Build a supervised text -> ESA WorldCover land-cover dataset from OSM polygons linked to Wikipedia/Wikivoyage documents."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -18,10 +18,12 @@ dependencies = [
     "huggingface-hub>=0.26",
     "typer>=0.12",
     "pyyaml>=6.0",
+    "rasterio>=1.5",
+    "exactextract>=0.3",
 ]
 
 [project.scripts]
-owc = "osm_wikidata_corine.cli:app"
+oww = "osm_wikidata_worldcover.cli:app"
 
 [dependency-groups]
 dev = [
@@ -42,7 +44,7 @@ requires = ["uv_build>=0.11,<0.12"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = "osm_wikidata_corine"
+module-name = "osm_wikidata_worldcover"
 module-root = "src"
 
 [tool.ruff]
@@ -68,9 +70,9 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/osm_wikidata_corine"]
+source = ["src/osm_wikidata_worldcover"]
 branch = true
 
 [tool.mutmut]
-paths_to_mutate = ["src/osm_wikidata_corine/domain/"]
+paths_to_mutate = ["src/osm_wikidata_worldcover/domain/"]
 tests_dir = "tests/unit/"

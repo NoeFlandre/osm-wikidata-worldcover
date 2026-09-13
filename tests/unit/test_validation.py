@@ -1,0 +1,103 @@
+"""Dataset-level invariants checked before anything is published."""
+
+from osm_wikidata_worldcover.domain.validation import Check, validate
+
+
+def row(**over: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "polygon_id": "luxembourg-latest:relation:1",
+        "document_id": "Q1:wikipedia:en:1:1",
+        "split": "train",
+        "worldcover_code": 10,
+        "worldcover_label": "Tree cover",
+        "dominant_fraction": 0.95,
+        "text": " ".join(["word"] * 30),
+        "h3_cell": "851f1d4bfffffff",
+    }
+    return base | over
+
+
+def checks_in(rows, **kw) -> set[Check]:
+    return {v.check for v in validate(rows, **kw).violations}
+
+
+def test_a_clean_dataset_passes() -> None:
+    report = validate([row(), row(polygon_id="p2", document_id="d2", text="x " * 40)])
+    assert report.ok
+    assert report.violations == []
+
+
+def test_same_polygon_in_two_splits_is_leakage() -> None:
+    rows = [row(document_id="d1"), row(document_id="d2", split="test")]
+    assert Check.POLYGON_LEAKAGE in checks_in(rows)
+
+
+def test_same_polygon_twice_in_one_split_is_not_leakage() -> None:
+    rows = [row(document_id="d1"), row(document_id="d2")]
+    assert Check.POLYGON_LEAKAGE not in checks_in(rows)
+
+
+def test_same_document_in_two_splits_is_leakage() -> None:
+    rows = [row(polygon_id="p1"), row(polygon_id="p2", split="test")]
+    assert Check.DOCUMENT_LEAKAGE in checks_in(rows)
+
+
+def test_unknown_worldcover_code_is_rejected() -> None:
+    assert Check.INVALID_LABEL in checks_in([row(worldcover_code=0)])
+
+
+def test_label_not_matching_its_code_is_rejected() -> None:
+    assert Check.INVALID_LABEL in checks_in([row(worldcover_label="Cropland")])
+
+
+def test_dominance_below_threshold_is_rejected() -> None:
+    assert Check.BELOW_THRESHOLD in checks_in([row(dominant_fraction=0.79)], threshold=0.8)
+
+
+def test_dominance_exactly_at_threshold_is_accepted() -> None:
+    assert Check.BELOW_THRESHOLD not in checks_in([row(dominant_fraction=0.8)], threshold=0.8)
+
+
+def test_too_short_text_is_rejected() -> None:
+    assert Check.UNUSABLE_TEXT in checks_in([row(text="tiny")])
+
+
+def test_exact_duplicate_text_and_label_is_rejected() -> None:
+    rows = [row(polygon_id="p1", document_id="d1"), row(polygon_id="p2", document_id="d2")]
+    assert Check.DUPLICATE_EXAMPLE in checks_in(rows)
+
+
+def test_same_text_under_a_different_label_is_not_a_duplicate() -> None:
+    rows = [
+        row(polygon_id="p1", document_id="d1"),
+        row(
+            polygon_id="p2",
+            document_id="d2",
+            worldcover_code=20,
+            worldcover_label="Shrubland",
+        ),
+    ]
+    assert Check.DUPLICATE_EXAMPLE not in checks_in(rows)
+
+
+def test_unknown_split_name_is_rejected() -> None:
+    assert Check.INVALID_SPLIT in checks_in([row(split="holdout")])
+
+
+def test_an_empty_dataset_is_reported_rather_than_silently_passing() -> None:
+    report = validate([])
+    assert not report.ok
+    assert Check.EMPTY_DATASET in {v.check for v in report.violations}
+
+
+def test_report_counts_every_offending_row_not_just_the_first() -> None:
+    rows = [row(polygon_id=f"p{i}", document_id=f"d{i}", text="tiny") for i in range(3)]
+    violation = next(v for v in validate(rows).violations if v.check is Check.UNUSABLE_TEXT)
+    assert violation.count == 3
+
+
+def test_violations_are_ordered_deterministically() -> None:
+    rows = [row(split="holdout", worldcover_code=0, text="tiny")]
+    first = [v.check for v in validate(rows).violations]
+    second = [v.check for v in validate(rows).violations]
+    assert first == second

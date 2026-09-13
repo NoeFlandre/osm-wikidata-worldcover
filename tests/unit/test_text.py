@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_corine.domain.text import (
+from osm_wikidata_worldcover.domain.text import (
     DEFAULT_MIN_WORDS,
     dedup_key,
     is_usable,
@@ -11,7 +11,9 @@ from osm_wikidata_corine.domain.text import (
 )
 
 
-@pytest.mark.parametrize("raw", ["", "   ", "\n\t ", " "])
+# "\xa0" (no-break space) and "\u3000" (ideographic space) are Unicode
+# whitespace: multilingual articles must not slip through as "content".
+@pytest.mark.parametrize("raw", ["", "   ", "\n\t ", "\xa0", "\u3000"])
 def test_blank_text_is_not_usable(raw: str) -> None:
     assert not is_usable(raw)
 

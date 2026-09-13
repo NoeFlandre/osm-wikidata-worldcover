@@ -4,15 +4,15 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from osm_wikidata_corine.domain.dominance import (
+from osm_wikidata_worldcover.domain.dominance import (
     OverlappingCoverageError,
     RejectionReason,
     class_fractions,
     decide,
 )
-from osm_wikidata_corine.domain.nomenclature import LEVEL3_LABELS, is_valid_code
+from osm_wikidata_worldcover.domain.nomenclature import CLASS_LABELS, NODATA, is_valid_code
 
-CODES = [*LEVEL3_LABELS, "999", "990", "995"]
+CODES = [*CLASS_LABELS, NODATA]
 
 polygon_areas = st.floats(min_value=1e-3, max_value=1e12, allow_nan=False, allow_infinity=False)
 thresholds = st.floats(min_value=0.01, max_value=1.0, allow_nan=False, allow_infinity=False)
@@ -22,8 +22,8 @@ thresholds = st.floats(min_value=0.01, max_value=1.0, allow_nan=False, allow_inf
 def coverage(draw: st.DrawFn) -> tuple[list[tuple[str, float]], float]:
     """A polygon area plus non-overlapping per-class areas summing to at most it.
 
-    This mirrors reality: CORINE tiles the plane, so a polygon's classes
-    partition it and any remainder is simply outside CORINE coverage.
+    This mirrors reality: every pixel carries exactly one class, so a polygon's
+    classes partition it and any remainder is simply unobserved.
     """
     polygon_area = draw(polygon_areas)
     codes = draw(st.lists(st.sampled_from(CODES), max_size=6, unique=True))

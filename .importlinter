@@ -1,31 +1,31 @@
 [importlinter]
-root_package = osm_wikidata_corine
+root_package = osm_wikidata_worldcover
 
 [importlinter:contract:domain-is-pure]
 name = Domain must not depend on adapters, pipeline or CLI
 type = forbidden
 source_modules =
-    osm_wikidata_corine.domain
+    osm_wikidata_worldcover.domain
 forbidden_modules =
-    osm_wikidata_corine.adapters
-    osm_wikidata_corine.pipeline
-    osm_wikidata_corine.cli
-    osm_wikidata_corine.config
+    osm_wikidata_worldcover.adapters
+    osm_wikidata_worldcover.pipeline
+    osm_wikidata_worldcover.cli
+    osm_wikidata_worldcover.config
 
 [importlinter:contract:no-cycles]
 name = No circular imports anywhere
 type = independence
 modules =
-    osm_wikidata_corine.domain.nomenclature
-    osm_wikidata_corine.domain.dominance
-    osm_wikidata_corine.domain.text
-    osm_wikidata_corine.domain.splits
+    osm_wikidata_worldcover.domain.nomenclature
+    osm_wikidata_worldcover.domain.dominance
+    osm_wikidata_worldcover.domain.text
+    osm_wikidata_worldcover.domain.splits
 
 [importlinter:contract:layers]
 name = Layered architecture
 type = layers
 layers =
-    osm_wikidata_corine.cli
-    osm_wikidata_corine.pipeline
-    osm_wikidata_corine.adapters
-    osm_wikidata_corine.domain
+    osm_wikidata_worldcover.cli
+    osm_wikidata_worldcover.pipeline
+    osm_wikidata_worldcover.adapters
+    osm_wikidata_worldcover.domain

@@ -1,10 +1,10 @@
-"""Decide whether one CORINE class dominates an OSM polygon.
+"""Decide whether one WorldCover class dominates an OSM polygon.
 
 Fractions are taken against the **polygon's own area**, not against the area
-the intersection happened to cover. A polygon straddling the edge of CORINE
-coverage therefore fails the dominance test rather than being labelled from
-whichever sliver did intersect -- refusing is the honest outcome when most of
-the polygon was never observed.
+that was actually observed. A polygon straddling a gap in coverage -- or one
+mostly covered by no-data pixels -- therefore fails the dominance test rather
+than being labelled from whichever sliver was classified. Refusing is the
+honest outcome when most of the polygon was never observed.
 """
 
 from collections.abc import Mapping
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
-from osm_wikidata_corine.domain.nomenclature import is_valid_code
+from osm_wikidata_worldcover.domain.nomenclature import is_valid_code
 
 __all__ = [
     "COVERAGE_TOLERANCE",
@@ -27,16 +27,17 @@ __all__ = [
 DEFAULT_THRESHOLD: Final[float] = 0.8
 
 #: Relative slack allowed on total coverage before it is treated as a bug.
-#: Absorbs floating-point noise from polygon clipping, nothing more.
+#: Absorbs floating-point noise from partial-pixel coverage, nothing more.
 COVERAGE_TOLERANCE: Final[float] = 0.01
 
 
 class OverlappingCoverageError(ValueError):
     """Raised when intersected areas sum to more than the polygon's own area.
 
-    CORINE's classes tile the plane without overlap, so this means the caller
-    double-counted an intersection. Clamping it away would silently manufacture
-    two dominant classes for one polygon, so it fails loudly instead.
+    WorldCover assigns each pixel exactly one class, so a pixel's area cannot
+    count towards two classes. This means the caller double-counted coverage.
+    Clamping it away would silently manufacture two dominant classes for one
+    polygon, so it fails loudly instead.
     """
 
 
@@ -57,12 +58,12 @@ class DominanceOutcome:
     """
 
     accepted: bool
-    code: str | None
+    code: int | None
     fraction: float
     reason: RejectionReason | None = None
 
 
-def class_fractions(areas_by_code: Mapping[str, float], polygon_area: float) -> dict[str, float]:
+def class_fractions(areas_by_code: Mapping[int, float], polygon_area: float) -> dict[int, float]:
     """Return each code's share of ``polygon_area``, clamped to ``[0, 1]``."""
     if polygon_area <= 0.0:
         return {}
@@ -75,14 +76,14 @@ def class_fractions(areas_by_code: Mapping[str, float], polygon_area: float) -> 
 
 
 def decide(
-    areas_by_code: Mapping[str, float],
+    areas_by_code: Mapping[int, float],
     polygon_area: float,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> DominanceOutcome:
     """Return the dominance verdict for one polygon.
 
-    ``areas_by_code`` maps a CORINE ``Code_18`` value to the intersected area,
-    in the same unit as ``polygon_area``.
+    ``areas_by_code`` maps a WorldCover class code to the area of the polygon
+    covered by it, in the same unit as ``polygon_area``.
     """
     if not 0.0 < threshold <= 1.0:
         raise ValueError(f"threshold must be in (0, 1], got {threshold!r}")

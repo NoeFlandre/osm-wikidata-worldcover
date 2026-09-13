@@ -10,12 +10,12 @@ import math
 
 from shapely.geometry.base import BaseGeometry
 
-__all__ = ["AREAL_TYPES", "InvalidGeometry", "is_usable_polygon", "screen"]
+__all__ = ["AREAL_TYPES", "InvalidGeometryError", "is_usable_polygon", "screen"]
 
 AREAL_TYPES = frozenset({"Polygon", "MultiPolygon"})
 
 
-class InvalidGeometry(ValueError):
+class InvalidGeometryError(ValueError):
     """Raised when a geometry cannot support an area-fraction computation."""
 
 
@@ -31,9 +31,9 @@ def is_usable_polygon(geom: BaseGeometry | None) -> bool:
 
 
 def screen(geom: BaseGeometry | None) -> BaseGeometry:
-    """Return ``geom`` unchanged, or raise :class:`InvalidGeometry`."""
+    """Return ``geom`` unchanged, or raise :class:`InvalidGeometryError`."""
     if not is_usable_polygon(geom):
-        raise InvalidGeometry(f"unusable geometry: {geom!r}")
+        raise InvalidGeometryError(f"unusable geometry: {geom!r}")
     assert geom is not None
     return geom
 

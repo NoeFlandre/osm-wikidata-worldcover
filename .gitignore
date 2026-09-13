@@ -10,3 +10,4 @@ mutants/
 site/
 data/
 !data/.gitkeep
+.DS_Store

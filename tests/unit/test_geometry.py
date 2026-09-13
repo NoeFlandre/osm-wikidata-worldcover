@@ -4,7 +4,7 @@ import pytest
 from shapely import wkt
 from shapely.geometry import GeometryCollection, LineString, Point, Polygon
 
-from osm_wikidata_corine.domain.geometry import InvalidGeometry, is_usable_polygon, screen
+from osm_wikidata_worldcover.domain.geometry import InvalidGeometryError, is_usable_polygon, screen
 
 SQUARE = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 BOWTIE = wkt.loads("POLYGON ((0 0, 1 1, 1 0, 0 1, 0 0))")
@@ -51,5 +51,5 @@ def test_screen_returns_the_geometry_when_usable() -> None:
 
 
 def test_screen_raises_for_unusable_geometry() -> None:
-    with pytest.raises(InvalidGeometry):
+    with pytest.raises(InvalidGeometryError):
         screen(BOWTIE)

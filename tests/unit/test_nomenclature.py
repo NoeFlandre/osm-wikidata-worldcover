@@ -1,46 +1,47 @@
-"""CORINE nomenclature lookup behaviour."""
+"""ESA WorldCover nomenclature lookup behaviour."""
 
 import pytest
 
-from osm_wikidata_corine.domain import nomenclature as nom
+from osm_wikidata_worldcover.domain import nomenclature as nom
 
 
-def test_level3_codes_are_the_44_corine_classes() -> None:
-    assert len(nom.LEVEL3_LABELS) == 44
+def test_there_are_eleven_worldcover_classes() -> None:
+    assert len(nom.CLASS_LABELS) == 11
 
 
 @pytest.mark.parametrize(
     ("code", "label"),
-    [
-        ("111", "Continuous urban fabric"),
-        ("311", "Broad-leaved forest"),
-        ("523", "Sea and ocean"),
-    ],
+    [(10, "Tree cover"), (50, "Built-up"), (95, "Mangroves"), (100, "Moss and lichen")],
 )
-def test_label_for_known_level3_code(code: str, label: str) -> None:
+def test_label_for_known_code(code: int, label: str) -> None:
     assert nom.label_for(code) == label
 
 
+def test_codes_are_the_official_non_sequential_values() -> None:
+    assert sorted(nom.CLASS_LABELS) == [10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]
+
+
 def test_label_for_unknown_code_raises() -> None:
-    with pytest.raises(nom.UnknownCorineCode):
-        nom.label_for("999")
+    with pytest.raises(nom.UnknownLandCoverCodeError):
+        nom.label_for(0)
 
 
 def test_is_valid_code_discriminates() -> None:
-    assert nom.is_valid_code("312")
-    assert not nom.is_valid_code("999")
-    assert not nom.is_valid_code("")
-    assert not nom.is_valid_code("31")
+    assert nom.is_valid_code(10)
+    assert not nom.is_valid_code(0)  # WorldCover no-data
+    assert not nom.is_valid_code(15)  # between real classes
+    assert not nom.is_valid_code(255)
 
 
-def test_levels_are_derived_prefixes_with_labels() -> None:
-    assert nom.level1_code("311") == "3"
-    assert nom.level2_code("311") == "31"
-    assert nom.level1_label("311") == "Forest and semi natural areas"
-    assert nom.level2_label("311") == "Forests"
+def test_nodata_value_is_declared_and_is_not_a_class() -> None:
+    assert nom.NODATA == 0
+    assert not nom.is_valid_code(nom.NODATA)
 
 
-def test_every_level3_code_has_resolvable_parent_labels() -> None:
-    for code in nom.LEVEL3_LABELS:
-        assert nom.level1_label(code)
-        assert nom.level2_label(code)
+def test_labels_are_unique() -> None:
+    assert len(set(nom.CLASS_LABELS.values())) == len(nom.CLASS_LABELS)
+
+
+def test_class_table_is_immutable() -> None:
+    with pytest.raises(TypeError):
+        nom.CLASS_LABELS[10] = "something else"  # type: ignore[index]
