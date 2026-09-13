@@ -15,6 +15,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 import geopandas as gpd
 import pandas as pd
@@ -91,10 +92,19 @@ def label_polygons(
     Polygons are grouped by the tiles they touch, so each raster is fetched
     once, used for every polygon over it, and released before the next group.
     """
-    frame = frame.assign(_tiles=tiles_for_frame(frame))
+    # groupby widens its key to Hashable and its group to DataFrame; both are
+    # narrower than that here by construction.
+    grouped = cast("gpd.GeoDataFrame", frame.assign(_tiles=tiles_for_frame(frame)))
     blocks = [
-        _process_group(group, tile_set, tiles, threshold, outcome, keep_tiles)
-        for tile_set, group in frame.groupby("_tiles", sort=True)
+        _process_group(
+            cast("gpd.GeoDataFrame", group),
+            cast("tuple[Tile, ...]", tile_set),
+            tiles,
+            threshold,
+            outcome,
+            keep_tiles,
+        )
+        for tile_set, group in grouped.groupby("_tiles", sort=True)
     ]
     kept = [b for b in blocks if b is not None]
     if not kept:

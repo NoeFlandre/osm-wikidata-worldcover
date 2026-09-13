@@ -12,20 +12,26 @@ forbidden_modules =
     osm_wikidata_worldcover.cli
     osm_wikidata_worldcover.config
 
-[importlinter:contract:no-cycles]
-name = No circular imports anywhere
-type = independence
-modules =
-    osm_wikidata_worldcover.domain.nomenclature
+[importlinter:contract:domain-layers]
+name = Domain modules form a strict hierarchy, so they cannot cycle
+type = layers
+layers =
+    osm_wikidata_worldcover.domain.validation
+    osm_wikidata_worldcover.domain.manifest
     osm_wikidata_worldcover.domain.dominance
-    osm_wikidata_worldcover.domain.text
     osm_wikidata_worldcover.domain.splits
+    osm_wikidata_worldcover.domain.text
+    osm_wikidata_worldcover.domain.geometry
+    osm_wikidata_worldcover.domain.tiling
+    osm_wikidata_worldcover.domain.nomenclature
 
 [importlinter:contract:layers]
 name = Layered architecture
 type = layers
 layers =
     osm_wikidata_worldcover.cli
+    osm_wikidata_worldcover.build
+    osm_wikidata_worldcover.finalize
     osm_wikidata_worldcover.pipeline
     osm_wikidata_worldcover.adapters
     osm_wikidata_worldcover.domain

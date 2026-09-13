@@ -33,6 +33,8 @@ def split_repo_path(path: str) -> tuple[str, str]:
 def resolve_revision(repo_id: str, revision: str | None = None) -> str:
     """Return the commit sha that ``revision`` names, pinning the build to it."""
     info = HfApi().dataset_info(repo_id, revision=revision)
+    if info.sha is None:
+        raise ValueError(f"{repo_id} has no commit for revision {revision!r}")
     return info.sha
 
 
