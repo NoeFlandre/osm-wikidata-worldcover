@@ -99,6 +99,19 @@ def _load_splits(build_dir: Path) -> list[dict] | None:
 
 
 @app.command()
+def publish(
+    build_dir: Annotated[Path, typer.Argument(help="A versioned build directory.")],
+    repo_id: Annotated[str, typer.Argument(help="Target dataset repo, e.g. user/name.")],
+    private: Annotated[bool, typer.Option(help="Create the dataset private.")] = False,
+) -> None:
+    """Upload a build to the Hugging Face Hub with a generated dataset card."""
+    from osm_wikidata_worldcover.adapters.publish import publish_dataset
+
+    url = publish_dataset(build_dir, repo_id, private=private)
+    typer.echo(f"published: {url}")
+
+
+@app.command()
 def info(build_dir: Annotated[Path, typer.Argument(help="A versioned build directory.")]) -> None:
     """Summarise a build's manifest."""
     manifest = read_manifest(build_dir)
