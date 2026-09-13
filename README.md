@@ -33,6 +33,10 @@ uv run oww build --region luxembourg-latest --out data/out
 # everything (≈229 GB of tile traffic, streamed and discarded)
 uv run oww build --out data/out --cache data/cache --cached-tiles 1500
 
+# labelling is CPU-bound and single-threaded, so a global run can be split
+# across processes by giving each a disjoint region list and its own cache
+uv run oww build --regions-file regions-a.txt --cache data/w0 --out data/w0/out
+
 uv run oww verify  data/out/v1.0.0     # re-check every guarantee
 uv run oww info    data/out/v1.0.0     # class and language distribution
 uv run oww publish data/out/v1.0.0 user/name
