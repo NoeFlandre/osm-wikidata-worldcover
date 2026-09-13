@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.domain.validation import Check, validate
+from osm_wikidata_worldcover.domain.validation import REQUIRED_COLUMNS, Check, validate
 
 
 def row(**over: object) -> dict[str, object]:
@@ -124,3 +124,26 @@ def test_an_inverted_bbox_error_names_the_problem() -> None:
 
     with pytest.raises(ValueError, match="inverted bbox"):
         tiles_for_bbox((9.0, 48.0, 6.0, 51.0))
+
+
+def test_the_columns_validation_needs_are_declared() -> None:
+    """Declared so a caller can read only these, instead of whole rows.
+
+    A published row carries the full article twice over (text and lead_text)
+    plus titles and URLs; materialising all of that to check six fields made
+    validating a global build take longer than producing it.
+    """
+    assert set(REQUIRED_COLUMNS) == {
+        "polygon_id",
+        "document_id",
+        "split",
+        "worldcover_code",
+        "worldcover_label",
+        "dominant_fraction",
+        "text",
+    }
+
+
+def test_validation_works_on_rows_holding_only_the_required_columns() -> None:
+    lean = {key: row()[key] for key in REQUIRED_COLUMNS}
+    assert validate([lean]).ok

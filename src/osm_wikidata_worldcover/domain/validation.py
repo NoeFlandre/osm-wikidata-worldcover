@@ -19,7 +19,21 @@ from osm_wikidata_worldcover.domain.nomenclature import CLASS_LABELS
 from osm_wikidata_worldcover.domain.splits import Split
 from osm_wikidata_worldcover.domain.text import DEFAULT_MIN_WORDS, dedup_key, is_usable
 
-__all__ = ["Check", "ValidationReport", "Violation", "validate"]
+__all__ = ["REQUIRED_COLUMNS", "Check", "ValidationReport", "Violation", "validate"]
+
+#: The only fields :func:`validate` reads. Declared so a caller reading rows
+#: back from Parquet can fetch these alone: a published row also carries the
+#: article text twice over, plus titles and URLs, and materialising all of it
+#: to check six fields dominates the cost of validating a global build.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "polygon_id",
+    "document_id",
+    "split",
+    "worldcover_code",
+    "worldcover_label",
+    "dominant_fraction",
+    "text",
+)
 
 _VALID_SPLITS = frozenset(s.value for s in Split)
 

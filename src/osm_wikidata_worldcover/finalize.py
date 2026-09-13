@@ -32,7 +32,11 @@ from osm_wikidata_worldcover.domain import manifest as manifest_module
 from osm_wikidata_worldcover.domain.manifest import DatasetCounts, GeographicCoverage
 from osm_wikidata_worldcover.domain.splits import SplitRatios, assign_cell, cell_for
 from osm_wikidata_worldcover.domain.text import dedup_key
-from osm_wikidata_worldcover.domain.validation import ValidationReport, validate
+from osm_wikidata_worldcover.domain.validation import (
+    REQUIRED_COLUMNS,
+    ValidationReport,
+    validate,
+)
 
 __all__ = ["StreamedBuild", "finalize_shards"]
 
@@ -235,7 +239,10 @@ def _validate_written(paths: Sequence[Path], config: Config) -> ValidationReport
 
     def rows() -> Iterable[dict[str, Any]]:
         for path in paths:
-            for batch in pq.ParquetFile(path).iter_batches(batch_size=2048):
+            batches = pq.ParquetFile(path).iter_batches(
+                batch_size=8192, columns=list(REQUIRED_COLUMNS)
+            )
+            for batch in batches:
                 yield from batch.to_pylist()
 
     return validate(rows(), threshold=config.threshold, min_words=config.min_words)
