@@ -1,14 +1,19 @@
 """Assemble region shards into the published dataset.
 
-Two kinds of duplicate are removed here, and they are not the same thing.
-Geofabrik's regional extracts overlap, so one OSM object can appear in several
-regions under different ``polygon_id`` values; those are the *same* object and
-only one copy should survive. Separately, distinct objects can carry
-byte-identical articles under the same label, which would let a model score on
-text it memorised; those collapse too.
+Three different problems are resolved here, and conflating them would get at
+least one of them wrong:
 
-Splitting happens last, on H3 cells rather than rows, so every article about a
-place -- and every nearby place -- shares one split.
+* Geofabrik's regional extracts overlap, so one OSM object appears in several
+  regions under different ``polygon_id`` values. Those are the *same* object,
+  and one region is chosen for all of its documents.
+* Distinct objects can carry byte-identical articles under the same label,
+  which would let a model score on text it had memorised.
+* One article can describe several distant places. Those fall in different
+  cells and therefore different splits, which would put the document in train
+  *and* test.
+
+The work is done a shard at a time, because a global build is far larger than
+the memory of the machine that produces it.
 """
 
 from collections.abc import Iterable
@@ -26,16 +31,6 @@ from osm_wikidata_worldcover.domain.text import dedup_key
 from osm_wikidata_worldcover.domain.validation import ValidationReport, validate
 
 __all__ = ["StreamedBuild", "finalize_shards"]
-
-PROVENANCE_COLUMNS = (
-    "h3_cell",
-    "split",
-    "dataset_version",
-    "source_dataset",
-    "source_revision",
-    "worldcover_version",
-    "worldcover_year",
-)
 
 
 def _assign_splits(
