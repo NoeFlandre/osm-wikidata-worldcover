@@ -4,7 +4,7 @@ import pytest
 from shapely import wkt
 from shapely.geometry import GeometryCollection, LineString, Point, Polygon
 
-from osm_wikidata_worldcover.domain.geometry import InvalidGeometryError, is_usable_polygon, screen
+from osm_wikidata_worldcover.domain.geometry import is_usable_polygon
 
 SQUARE = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 BOWTIE = wkt.loads("POLYGON ((0 0, 1 1, 1 0, 0 1, 0 0))")
@@ -44,12 +44,3 @@ def test_multipolygon_is_usable() -> None:
     from shapely.geometry import MultiPolygon
 
     assert is_usable_polygon(MultiPolygon([SQUARE, Polygon([(2, 2), (2, 3), (3, 3)])]))
-
-
-def test_screen_returns_the_geometry_when_usable() -> None:
-    assert screen(SQUARE) is SQUARE
-
-
-def test_screen_raises_for_unusable_geometry() -> None:
-    with pytest.raises(InvalidGeometryError):
-        screen(BOWTIE)

@@ -12,7 +12,13 @@ from huggingface_hub.utils import EntryNotFoundError
 
 from osm_wikidata_worldcover.adapters.source import PROJECTS
 
-__all__ = ["region_files", "resolve_revision", "snapshot_region", "split_repo_path"]
+__all__ = [
+    "list_region_stems",
+    "region_files",
+    "resolve_revision",
+    "snapshot_region",
+    "split_repo_path",
+]
 
 
 def region_files(stem: str) -> list[str]:
