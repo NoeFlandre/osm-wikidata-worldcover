@@ -12,17 +12,21 @@ least one of them wrong:
   cells and therefore different splits, which would put the document in train
   *and* test.
 
-The work is done a shard at a time, because a global build is far larger than
-the memory of the machine that produces it.
+Nothing is ever held whole. A global build is several times the memory of the
+machine that produces it, so row-local work happens a shard at a time, the
+global work is left to DuckDB over files, and the result is streamed to Parquet
+in batches rather than collected first.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pyarrow.parquet as pq
 
+from osm_wikidata_worldcover.adapters.writer import write_batches, write_manifest
 from osm_wikidata_worldcover.config import Config
 from osm_wikidata_worldcover.domain import manifest as manifest_module
 from osm_wikidata_worldcover.domain.manifest import DatasetCounts, GeographicCoverage
@@ -31,6 +35,76 @@ from osm_wikidata_worldcover.domain.text import dedup_key
 from osm_wikidata_worldcover.domain.validation import ValidationReport, validate
 
 __all__ = ["StreamedBuild", "finalize_shards"]
+
+
+@dataclass(slots=True)
+class StreamedBuild:
+    """A finished build, written to disk without ever being held in memory."""
+
+    rows: int
+    paths: list[Path]
+    manifest: dict[str, Any]
+    report: ValidationReport
+    duplicates_across_regions: int = 0
+    duplicate_examples: int = 0
+    documents_split_across_splits: int = 0
+
+
+def finalize_shards(
+    shard_dir: Path,
+    config: Config,
+    work_dir: Path,
+    out_dir: Path,
+    rejections: dict[str, int] | None = None,
+) -> StreamedBuild:
+    """Assemble region shards into the dataset written under ``out_dir``."""
+    work_dir, out_dir = Path(work_dir), Path(out_dir)
+    enriched = work_dir / "enriched"
+    enriched.mkdir(parents=True, exist_ok=True)
+    target = out_dir / f"v{config.dataset_version}"
+    target.mkdir(parents=True, exist_ok=True)
+
+    if _enrich_shards(Path(shard_dir), enriched, config) == 0:
+        return StreamedBuild(0, [], {}, validate([]))
+
+    connection, dropped = _deduplicate(enriched)
+    try:
+        paths, rows = _write_splits(connection, target)
+        counts = _aggregate(connection, rejections or {}, dropped)
+    finally:
+        connection.close()
+
+    manifest = manifest_module.build(counts, config.as_manifest_settings())
+    report = _validate_written(paths, config)
+    paths.append(write_manifest(manifest, target / "manifest.json"))
+    return StreamedBuild(
+        rows=rows,
+        paths=paths,
+        manifest=manifest,
+        report=report,
+        duplicates_across_regions=dropped["duplicate_objects_across_regions"],
+        duplicate_examples=dropped["duplicate_examples"],
+        documents_split_across_splits=dropped["documents_split_across_splits"],
+    )
+
+
+def _enrich_shards(shard_dir: Path, enriched: Path, config: Config) -> int:
+    """Add the row-local columns to each shard in turn. Returns rows seen."""
+    ratios = SplitRatios(config.train_ratio, config.validation_ratio, config.test_ratio)
+    total = 0
+    for path in sorted(shard_dir.glob("*.parquet")):
+        frame = pd.read_parquet(path)
+        if len(frame) == 0 or "polygon_id" not in frame.columns:
+            continue
+        frame = _assign_splits(frame, config, ratios)
+        frame = _attach_provenance(frame, config)
+        frame["_dedup_key"] = [
+            dedup_key(text, str(code))
+            for text, code in zip(frame["text"], frame["worldcover_code"], strict=True)
+        ]
+        frame.to_parquet(enriched / path.name, index=False)
+        total += len(frame)
+    return total
 
 
 def _assign_splits(
@@ -59,139 +133,25 @@ def _attach_provenance(frame: pd.DataFrame, config: Config) -> pd.DataFrame:
     )
 
 
-def _counts(frame: pd.DataFrame, rejections: dict[str, int]) -> DatasetCounts:
-    """Aggregate the finished frame into the numbers the manifest reports."""
-    by_split = frame.groupby("split")
-    quantiles = frame["dominant_fraction"].quantile([0.5, 0.9, 0.99])
-    return DatasetCounts(
-        examples=by_split.size().to_dict(),
-        polygons=by_split["polygon_id"].nunique().to_dict(),
-        documents=by_split["document_id"].nunique().to_dict(),
-        class_distribution={
-            int(k): int(v) for k, v in frame["worldcover_code"].value_counts().items()
-        },
-        language_distribution={str(k): int(v) for k, v in frame["language"].value_counts().items()},
-        dominant_fraction_quantiles={
-            "p50": round(float(quantiles.loc[0.5]), 6),
-            "p90": round(float(quantiles.loc[0.9]), 6),
-            "p99": round(float(quantiles.loc[0.99]), 6),
-        },
-        coverage=GeographicCoverage(
-            h3_cells=int(frame["h3_cell"].nunique()),
-            bbox=(
-                float(frame["lon"].min()),
-                float(frame["lat"].min()),
-                float(frame["lon"].max()),
-                float(frame["lat"].max()),
-            ),
-            regions=int(frame["region"].nunique()),
-        ),
-        rejections=dict(sorted(rejections.items())),
-    )
-
-
-@dataclass(slots=True)
-class StreamedBuild:
-    """A finished build assembled without holding every shard in memory."""
-
-    rows: int
-    frames: dict[str, pd.DataFrame]
-    manifest: dict[str, Any]
-    report: ValidationReport
-    duplicates_across_regions: int = 0
-    duplicate_examples: int = 0
-    documents_split_across_splits: int = 0
-
-
-def finalize_shards(
-    shard_dir: Path,
-    config: Config,
-    work_dir: Path,
-    rejections: dict[str, int] | None = None,
-) -> StreamedBuild:
-    """Assemble region shards into the published dataset, one shard at a time.
-
-    A global build is roughly 10 GB of DataFrame, more than the machine that
-    produces it. Everything row-local -- the H3 cell, the split, the duplicate
-    keys -- is computed per shard, where memory is bounded by one region. The
-    genuinely global work, which is only de-duplication and ordering, is then
-    left to DuckDB over the enriched files.
-    """
-    work_dir = Path(work_dir)
-    enriched = work_dir / "enriched"
-    enriched.mkdir(parents=True, exist_ok=True)
-
-    total = _enrich_shards(Path(shard_dir), enriched, config)
-    if total == 0:
-        return StreamedBuild(0, {}, {}, validate([]))
-
-    frames, dropped_objects, dropped_examples, dropped_documents = _deduplicate(enriched)
-    rows = sum(len(f) for f in frames.values())
-    report = _validate_frames(frames, config)
-    counts = _counts(pd.concat(frames.values(), ignore_index=True), rejections or {})
-    counts.deduplication = {
-        "duplicate_objects_across_regions": dropped_objects,
-        "duplicate_examples": dropped_examples,
-        "documents_split_across_splits": dropped_documents,
-    }
-    return StreamedBuild(
-        rows=rows,
-        frames=frames,
-        manifest=manifest_module.build(counts, config.as_manifest_settings()),
-        report=report,
-        duplicates_across_regions=dropped_objects,
-        duplicate_examples=dropped_examples,
-        documents_split_across_splits=dropped_documents,
-    )
-
-
-def _enrich_shards(shard_dir: Path, enriched: Path, config: Config) -> int:
-    """Add the row-local columns to each shard in turn. Returns rows seen."""
-    ratios = SplitRatios(config.train_ratio, config.validation_ratio, config.test_ratio)
-    total = 0
-    for path in sorted(shard_dir.glob("*.parquet")):
-        frame = pd.read_parquet(path)
-        if len(frame) == 0 or "polygon_id" not in frame.columns:
-            continue
-        frame = _assign_splits(frame, config, ratios)
-        frame = _attach_provenance(frame, config)
-        frame["_dedup_key"] = [
-            dedup_key(text, str(code))
-            for text, code in zip(frame["text"], frame["worldcover_code"], strict=True)
-        ]
-        frame.to_parquet(enriched / path.name, index=False)
-        total += len(frame)
-    return total
-
-
-def _deduplicate(enriched: Path) -> tuple[dict[str, pd.DataFrame], int, int, int]:
+def _deduplicate(enriched: Path) -> tuple[Any, dict[str, int]]:
     """Collapse duplicates and split conflicts across every shard, using DuckDB.
 
-    Three distinct problems, applied in order, each counted separately:
-
-    1. Geofabrik extracts overlap, so one OSM object appears in several regions
-       under different ``polygon_id`` values. One region is chosen per object,
-       so an object wears a single id for all of its documents.
-    2. Distinct objects can carry byte-identical text under the same label.
-    3. One article can describe several distant places, which fall in different
-       cells and therefore different splits. The split holding most of that
-       document's rows keeps them; the rest are dropped, because moving them
-       instead would break the geographic blocking.
-
-    Every ordering is fully specified, so no survivor depends on file order.
+    The open connection is returned so the surviving rows can be streamed out
+    rather than collected. Every ordering is fully specified, so no survivor
+    depends on the order files happened to be read in.
     """
     import duckdb
 
     pattern = str(enriched / "*.parquet")
-    con = duckdb.connect()
-    before = _count(con, f"SELECT count(*) FROM read_parquet('{pattern}')")
+    connection = duckdb.connect()
+    before = _count(connection, f"SELECT count(*) FROM read_parquet('{pattern}')")
 
-    con.execute(
+    # One region per OSM object, so an object cannot wear two polygon_ids.
+    connection.execute(
         f"""
         CREATE TEMP TABLE objects AS
         WITH home_region AS (
-            SELECT osm_type, osm_id, region AS _home_region
-            FROM (
+            SELECT osm_type, osm_id, region AS _home_region FROM (
                 SELECT osm_type, osm_id, region, row_number() OVER (
                     PARTITION BY osm_type, osm_id ORDER BY region
                 ) AS _rank
@@ -211,9 +171,10 @@ def _deduplicate(enriched: Path) -> tuple[dict[str, pd.DataFrame], int, int, int
         ) WHERE _rank = 1
         """
     )
-    after_objects = _count(con, "SELECT count(*) FROM objects")
+    after_objects = _count(connection, "SELECT count(*) FROM objects")
 
-    con.execute(
+    # One row per (text, label).
+    connection.execute(
         """
         CREATE TEMP TABLE examples AS
         SELECT * EXCLUDE (_rank, _dedup_key) FROM (
@@ -224,9 +185,10 @@ def _deduplicate(enriched: Path) -> tuple[dict[str, pd.DataFrame], int, int, int
         ) WHERE _rank = 1
         """
     )
-    after_examples = _count(con, "SELECT count(*) FROM examples")
+    after_examples = _count(connection, "SELECT count(*) FROM examples")
 
-    con.execute(
+    # One split per document: the one holding most of its rows.
+    connection.execute(
         """
         CREATE TEMP TABLE kept AS
         WITH document_home AS (
@@ -242,26 +204,84 @@ def _deduplicate(enriched: Path) -> tuple[dict[str, pd.DataFrame], int, int, int
         WHERE e.split = h._home
         """
     )
-    after = _count(con, "SELECT count(*) FROM kept")
+    after = _count(connection, "SELECT count(*) FROM kept")
+    connection.execute("DROP TABLE objects")
+    connection.execute("DROP TABLE examples")
 
-    frames = {
-        split: con.execute(
-            "SELECT * FROM kept WHERE split = ? ORDER BY polygon_id, document_id", [split]
-        ).df()
-        for split in manifest_module.SPLIT_ORDER
+    return connection, {
+        "duplicate_objects_across_regions": before - after_objects,
+        "duplicate_examples": after_objects - after_examples,
+        "documents_split_across_splits": after_examples - after,
     }
-    con.close()
-    return frames, before - after_objects, after_objects - after_examples, after_examples - after
 
 
-def _validate_frames(frames: dict[str, pd.DataFrame], config: Config) -> ValidationReport:
-    """Validate every split without materialising them all as dicts at once."""
+def _write_splits(connection: Any, target: Path) -> tuple[list[Path], int]:
+    """Stream each split from DuckDB into its own Parquet file."""
+    paths: list[Path] = []
+    rows = 0
+    for split in manifest_module.SPLIT_ORDER:
+        path = target / f"{split}.parquet"
+        reader = connection.execute(
+            "SELECT * FROM kept WHERE split = ? ORDER BY polygon_id, document_id",
+            [split],
+        ).to_arrow_reader()
+        rows += write_batches(reader, path)
+        paths.append(path)
+    return paths, rows
+
+
+def _validate_written(paths: Sequence[Path], config: Config) -> ValidationReport:
+    """Validate the dataset that was actually written, by streaming it back."""
 
     def rows() -> Iterable[dict[str, Any]]:
-        for frame in frames.values():
-            yield from frame.to_dict("records")
+        for path in paths:
+            for batch in pq.ParquetFile(path).iter_batches(batch_size=2048):
+                yield from batch.to_pylist()
 
     return validate(rows(), threshold=config.threshold, min_words=config.min_words)
+
+
+def _aggregate(
+    connection: Any, rejections: dict[str, int], dropped: dict[str, int]
+) -> DatasetCounts:
+    """Compute every manifest number in SQL, so no frame is ever built."""
+    quantiles = connection.execute(
+        "SELECT quantile_cont(dominant_fraction, [0.5, 0.9, 0.99]) FROM kept"
+    ).fetchone()[0]
+    bbox = connection.execute("SELECT min(lon), min(lat), max(lon), max(lat) FROM kept").fetchone()
+    return DatasetCounts(
+        examples=_by_split(connection, "count(*)"),
+        polygons=_by_split(connection, "count(DISTINCT polygon_id)"),
+        documents=_by_split(connection, "count(DISTINCT document_id)"),
+        class_distribution=_tally(connection, "worldcover_code", int),
+        language_distribution=_tally(connection, "language", str),
+        dominant_fraction_quantiles={
+            "p50": round(float(quantiles[0]), 6),
+            "p90": round(float(quantiles[1]), 6),
+            "p99": round(float(quantiles[2]), 6),
+        },
+        coverage=GeographicCoverage(
+            h3_cells=_count(connection, "SELECT count(DISTINCT h3_cell) FROM kept"),
+            bbox=(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])),
+            regions=_count(connection, "SELECT count(DISTINCT region) FROM kept"),
+        ),
+        rejections=dict(sorted(rejections.items())),
+        deduplication=dict(sorted(dropped.items())),
+    )
+
+
+def _by_split(connection: Any, expression: str) -> dict[str, int]:
+    """Evaluate ``expression`` per split."""
+    rows = connection.execute(f"SELECT split, {expression} FROM kept GROUP BY 1").fetchall()
+    return {str(split): int(value) for split, value in rows}
+
+
+def _tally(connection: Any, column: str, cast: Any) -> dict[Any, int]:
+    """Count rows per distinct value of ``column``."""
+    rows = connection.execute(
+        f"SELECT {column}, count(*) FROM kept GROUP BY 1 ORDER BY 1"
+    ).fetchall()
+    return {cast(value): int(n) for value, n in rows}
 
 
 def _count(connection: Any, sql: str) -> int:

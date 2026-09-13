@@ -99,7 +99,7 @@ class TestRunBuild:
         from osm_wikidata_worldcover.config import Config
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
-        report = module.run_build(Config(cache_dir=tmp_path))
+        report = module.run_build(Config(cache_dir=tmp_path, out_dir=tmp_path / "out"))
         assert report.result.rows == 2
         assert len(report.regions) == 2
 
@@ -107,7 +107,7 @@ class TestRunBuild:
         from osm_wikidata_worldcover.config import Config
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
-        config = Config(cache_dir=tmp_path)
+        config = Config(cache_dir=tmp_path, out_dir=tmp_path / "out")
         module.run_build(config)
         second = module.run_build(config)
         assert second.regions == []  # nothing re-processed
@@ -117,7 +117,7 @@ class TestRunBuild:
         from osm_wikidata_worldcover.config import Config
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
-        report = module.run_build(Config(cache_dir=tmp_path))
+        report = module.run_build(Config(cache_dir=tmp_path, out_dir=tmp_path / "out"))
         for region in report.regions:
             region.rejections["below_threshold"] = 2
         assert report.rejections == {"below_threshold": 4}
@@ -126,7 +126,9 @@ class TestRunBuild:
         from osm_wikidata_worldcover.config import Config
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
-        report = module.run_build(Config(cache_dir=tmp_path), regions=["alpha"])
+        report = module.run_build(
+            Config(cache_dir=tmp_path, out_dir=tmp_path / "out"), regions=["alpha"]
+        )
         assert [r.stem for r in report.regions] == ["alpha"]
 
     def test_a_pinned_revision_is_not_resolved_again(self, tmp_path, monkeypatch) -> None:
@@ -139,9 +141,12 @@ class TestRunBuild:
             raise AssertionError("revision was already pinned")
 
         monkeypatch.setattr(build_module.hub, "resolve_revision", explode)
-        report = build_module.run_build(Config(cache_dir=tmp_path, source_revision="pinned"))
-        revisions = pd.concat(report.result.frames.values())["source_revision"].unique()
-        assert revisions.tolist() == ["pinned"]
+        report = build_module.run_build(
+            Config(cache_dir=tmp_path, out_dir=tmp_path / "out", source_revision="pinned")
+        )
+        splits = [p for p in report.result.paths if p.suffix == ".parquet"]
+        rows = pd.concat([pd.read_parquet(p) for p in splits], ignore_index=True)
+        assert rows["source_revision"].unique().tolist() == ["pinned"]
 
 
 def test_progress_is_reported_as_each_region_starts(tmp_path, monkeypatch) -> None:
@@ -163,7 +168,7 @@ def test_progress_is_reported_as_each_region_starts(tmp_path, monkeypatch) -> No
         return original(config, revision, stem, raw, tiles, shards, keep_tiles, progress)
 
     monkeypatch.setattr(build_module, "_process_region", spy)
-    module.run_build(Config(cache_dir=tmp_path), progress=seen.append)
+    module.run_build(Config(cache_dir=tmp_path, out_dir=tmp_path / "out"), progress=seen.append)
 
     # beta must not be announced before alpha has been processed.
     assert seen.index("processing alpha") < next(

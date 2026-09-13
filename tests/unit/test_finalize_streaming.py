@@ -10,6 +10,13 @@ import pytest
 from osm_wikidata_worldcover.config import Config
 from osm_wikidata_worldcover.finalize import finalize_shards
 
+
+def written(result) -> pd.DataFrame:
+    """Every published row, read back from the files that were written."""
+    splits = [p for p in result.paths if p.suffix == ".parquet"]
+    return pd.concat([pd.read_parquet(p) for p in splits], ignore_index=True)
+
+
 TEXT = " ".join(["word"] * 30)
 
 
@@ -52,15 +59,19 @@ def shards(tmp_path):
 
 def test_a_single_shard_becomes_a_dataset(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=3)
-    result = finalize_shards(shards, Config(), tmp_path / "work")
+    result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
     assert result.rows == 3
-    assert set(result.frames) == {"train", "validation", "test"}
+    assert {p.stem for p in result.paths if p.suffix == ".parquet"} == {
+        "train",
+        "validation",
+        "test",
+    }
 
 
 def test_every_row_gets_a_cell_and_a_split(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=3)
-    result = finalize_shards(shards, Config(), tmp_path / "work")
-    all_rows = pd.concat(result.frames.values())
+    result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
+    all_rows = written(result)
     assert all_rows["split"].isin(["train", "validation", "test"]).all()
     assert all_rows["h3_cell"].str.len().gt(0).all()
 
@@ -68,7 +79,7 @@ def test_every_row_gets_a_cell_and_a_split(shards, tmp_path) -> None:
 def test_the_same_object_from_two_regions_is_kept_once(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=1, region="luxembourg")
     shard(shards / "b.parquet", n=1, region="belgium")
-    result = finalize_shards(shards, Config(), tmp_path / "work")
+    result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
     assert result.rows == 1
     assert result.duplicates_across_regions == 1
 
@@ -76,17 +87,17 @@ def test_the_same_object_from_two_regions_is_kept_once(shards, tmp_path) -> None
 def test_cross_region_dedup_is_deterministic(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=1, region="luxembourg")
     shard(shards / "b.parquet", n=1, region="belgium")
-    first = finalize_shards(shards, Config(), tmp_path / "w1")
-    second = finalize_shards(shards, Config(), tmp_path / "w2")
-    kept = pd.concat(first.frames.values())["region"].tolist()
-    assert kept == pd.concat(second.frames.values())["region"].tolist()
+    first = finalize_shards(shards, Config(), tmp_path / "w1", tmp_path / "w1" / "out")
+    second = finalize_shards(shards, Config(), tmp_path / "w2", tmp_path / "w2" / "out")
+    kept = written(first)["region"].tolist()
+    assert kept == written(second)["region"].tolist()
     assert kept == ["belgium"]
 
 
 def test_identical_text_and_label_collapses(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=1, start=0, text="same text here " * 5)
     shard(shards / "b.parquet", n=1, start=9, text="same text here " * 5)
-    result = finalize_shards(shards, Config(), tmp_path / "work")
+    result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
     assert result.rows == 1
     assert result.duplicate_examples == 1
 
@@ -94,38 +105,39 @@ def test_identical_text_and_label_collapses(shards, tmp_path) -> None:
 def test_identical_text_under_different_labels_is_kept(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=1, start=0, text="same text here " * 5, code=10)
     shard(shards / "b.parquet", n=1, start=9, text="same text here " * 5, code=50)
-    assert finalize_shards(shards, Config(), tmp_path / "work").rows == 2
+    assert finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out").rows == 2
 
 
 def test_the_result_validates(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=5)
-    assert finalize_shards(shards, Config(), tmp_path / "work").report.ok
+    assert finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out").report.ok
 
 
 def test_manifest_counts_match_the_rows(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=7)
-    result = finalize_shards(shards, Config(), tmp_path / "work")
+    result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
     assert result.manifest["counts"]["examples"]["total"] == result.rows
 
 
 def test_provenance_is_attached(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=1)
-    result = finalize_shards(shards, Config(source_revision="abc"), tmp_path / "work")
-    row = pd.concat(result.frames.values()).iloc[0]
+    result = finalize_shards(
+        shards, Config(source_revision="abc"), tmp_path / "work", tmp_path / "work" / "out"
+    )
+    row = written(result).iloc[0]
     assert row["source_revision"] == "abc"
     assert row["worldcover_version"] == "v200"
 
 
 def test_output_is_sorted_deterministically(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=6)
-    a = finalize_shards(shards, Config(), tmp_path / "w1")
-    b = finalize_shards(shards, Config(), tmp_path / "w2")
-    for split in a.frames:
-        assert a.frames[split]["polygon_id"].tolist() == b.frames[split]["polygon_id"].tolist()
+    a = finalize_shards(shards, Config(), tmp_path / "w1", tmp_path / "w1" / "out")
+    b = finalize_shards(shards, Config(), tmp_path / "w2", tmp_path / "w2" / "out")
+    assert written(a)["polygon_id"].tolist() == written(b)["polygon_id"].tolist()
 
 
 def test_an_empty_shard_directory_is_reported(shards, tmp_path) -> None:
-    result = finalize_shards(shards, Config(), tmp_path / "work")
+    result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
     assert result.rows == 0
     assert not result.report.ok
 
@@ -133,7 +145,7 @@ def test_an_empty_shard_directory_is_reported(shards, tmp_path) -> None:
 def test_empty_shards_are_ignored(shards, tmp_path) -> None:
     pd.DataFrame().to_parquet(shards / "empty.parquet", index=False)
     shard(shards / "a.parquet", n=2)
-    assert finalize_shards(shards, Config(), tmp_path / "work").rows == 2
+    assert finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out").rows == 2
 
 
 def test_shards_are_never_all_held_in_memory(shards, tmp_path, monkeypatch) -> None:
@@ -155,7 +167,7 @@ def test_shards_are_never_all_held_in_memory(shards, tmp_path, monkeypatch) -> N
     monkeypatch.setattr(module.pd, "read_parquet", counting_read)
     for i in range(5):
         shard(shards / f"s{i}.parquet", n=2, start=i * 10)
-    finalize_shards(shards, Config(), tmp_path / "work")
+    finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
     assert peak == 1
 
 
@@ -216,8 +228,8 @@ class TestDocumentLeakage:
             lons=[6.1, 139.7, 151.2, 24.9],
             codes=[10, 20, 30, 50],
         )
-        result = finalize_shards(shards, Config(), tmp_path / "work")
-        rows = pd.concat(result.frames.values())
+        result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
+        rows = written(result)
         assert rows["split"].nunique() == 1
         assert result.report.ok
 
@@ -230,7 +242,7 @@ class TestDocumentLeakage:
             lons=[6.1, 139.7, 151.2, 24.9],
             codes=[10, 20, 30, 50],
         )
-        result = finalize_shards(shards, Config(), tmp_path / "work")
+        result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
         assert result.documents_split_across_splits > 0
 
     def test_a_document_confined_to_one_cell_keeps_every_row(self, shards, tmp_path) -> None:
@@ -242,7 +254,7 @@ class TestDocumentLeakage:
             lons=[6.100, 6.101, 6.102],
             codes=[10, 20, 30],
         )
-        result = finalize_shards(shards, Config(), tmp_path / "work")
+        result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
         assert result.rows == 3
         assert result.documents_split_across_splits == 0
 
@@ -256,12 +268,9 @@ class TestDocumentLeakage:
                 lons=[6.1, 139.7, 151.2, 24.9],
                 codes=[10, 20, 30, 50],
             )
-        first = finalize_shards(shards, Config(), tmp_path / "w1")
-        second = finalize_shards(shards, Config(), tmp_path / "w2")
-        assert (
-            pd.concat(first.frames.values())["split"].tolist()
-            == pd.concat(second.frames.values())["split"].tolist()
-        )
+        first = finalize_shards(shards, Config(), tmp_path / "w1", tmp_path / "w1" / "out")
+        second = finalize_shards(shards, Config(), tmp_path / "w2", tmp_path / "w2" / "out")
+        assert written(first)["split"].tolist() == written(second)["split"].tolist()
 
 
 class TestOneRegionPerObject:
@@ -276,6 +285,6 @@ class TestOneRegionPerObject:
     ) -> None:
         for region in ("luxembourg", "belgium"):
             shard(shards / f"{region}.parquet", n=2, start=0, region=region)
-        result = finalize_shards(shards, Config(), tmp_path / "work")
-        rows = pd.concat(result.frames.values())
+        result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
+        rows = written(result)
         assert rows["region"].nunique() == 1

@@ -44,8 +44,22 @@ def frame(n: int = 4) -> pd.DataFrame:
     )
 
 
+def built(tmp_path, report=None) -> StreamedBuild:
+    """A StreamedBuild as run_build would return it, already written to disk."""
+    target = tmp_path / "v1.0.0"
+    target.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for split in ("train", "validation", "test"):
+        path = target / f"{split}.parquet"
+        frame()[frame()["split"] == split].to_parquet(path, index=False)
+        paths.append(path)
+    paths.append(target / "manifest.json")
+    paths[-1].write_text(json.dumps(MANIFEST))
+    return StreamedBuild(4, paths, MANIFEST, report or ValidationReport(4))
+
+
 def test_build_writes_a_dataset_and_reports_counts(tmp_path, monkeypatch) -> None:
-    result = StreamedBuild(4, split_frames(frame()), MANIFEST, ValidationReport(4))
+    result = built(tmp_path)
     monkeypatch.setattr(cli, "run_build", lambda *a, **k: type("R", (), {"result": result})())
     outcome = runner.invoke(cli.app, ["build", "--out", str(tmp_path), "--cache", str(tmp_path)])
     assert outcome.exit_code == 0, outcome.output
@@ -55,7 +69,7 @@ def test_build_writes_a_dataset_and_reports_counts(tmp_path, monkeypatch) -> Non
 
 def test_build_fails_when_a_guarantee_is_broken(tmp_path, monkeypatch) -> None:
     report = ValidationReport(4, [Violation(Check.POLYGON_LEAKAGE, 2, ("p1",))])
-    result = StreamedBuild(4, split_frames(frame()), MANIFEST, report)
+    result = built(tmp_path, report)
     monkeypatch.setattr(cli, "run_build", lambda *a, **k: type("R", (), {"result": result})())
     outcome = runner.invoke(cli.app, ["build", "--out", str(tmp_path), "--cache", str(tmp_path)])
     assert outcome.exit_code == 1
@@ -102,7 +116,7 @@ def test_info_summarises_a_manifest(tmp_path) -> None:
 def test_build_reads_regions_from_a_file(tmp_path, monkeypatch) -> None:
     """A global run names hundreds of regions; a file beats a giant argv."""
     seen: dict[str, object] = {}
-    result = StreamedBuild(4, split_frames(frame()), MANIFEST, ValidationReport(4))
+    result = built(tmp_path)
 
     def fake_build(config, regions=None, **kwargs):
         seen["regions"] = regions
@@ -121,7 +135,7 @@ def test_build_reads_regions_from_a_file(tmp_path, monkeypatch) -> None:
 
 def test_regions_file_and_region_flags_combine(tmp_path, monkeypatch) -> None:
     seen: dict[str, object] = {}
-    result = StreamedBuild(4, split_frames(frame()), MANIFEST, ValidationReport(4))
+    result = built(tmp_path)
 
     def fake_build(config, regions=None, **kwargs):
         seen["regions"] = regions

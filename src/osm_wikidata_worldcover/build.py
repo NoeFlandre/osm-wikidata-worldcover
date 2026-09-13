@@ -103,7 +103,11 @@ def run_build(
     rejections = _summed(outcomes)
     return BuildReport(
         result=finalize_shards(
-            shards.directory, config, Path(config.cache_dir) / "assembly", rejections
+            shards.directory,
+            config,
+            Path(config.cache_dir) / "assembly",
+            Path(config.out_dir),
+            rejections,
         ),
         regions=outcomes,
     )

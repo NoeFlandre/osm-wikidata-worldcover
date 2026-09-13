@@ -3,74 +3,69 @@
 import json
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
-from osm_wikidata_worldcover.adapters.writer import read_manifest, write_dataset
+from osm_wikidata_worldcover.adapters.writer import read_manifest, write_batches, write_manifest
 
 
-def result(n: int = 3) -> tuple[dict[str, pd.DataFrame], dict]:
-    splits = ["train", "validation", "test"][:n] + ["train"] * max(0, n - 3)
-    frame = pd.DataFrame(
+def reader(n: int = 3) -> pa.RecordBatchReader:
+    table = pa.table(
         {
             "polygon_id": [f"p{i}" for i in range(n)],
-            "document_id": [f"d{i}" for i in range(n)],
-            "text": ["t"] * n,
+            "text": [f"t{i}" for i in range(n)],
             "worldcover_code": [10] * n,
-            "split": splits,
         }
     )
-    frames = {
-        name: frame[frame["split"] == name].reset_index(drop=True)
-        for name in ("train", "validation", "test")
-    }
-    return frames, {"counts": {"examples": {"total": n}}}
+    return table.to_reader(max_chunksize=2)
 
 
-def test_each_split_is_written_as_its_own_parquet(tmp_path) -> None:
-    paths = write_dataset(*result(), tmp_path, "1.0.0")
-    for split in ("train", "validation", "test"):
-        assert (tmp_path / "v1.0.0" / f"{split}.parquet").exists()
-    assert all(p.exists() for p in paths)
+def test_every_row_is_written(tmp_path) -> None:
+    path = tmp_path / "train.parquet"
+    assert write_batches(reader(5), path) == 5
+    assert len(pd.read_parquet(path)) == 5
 
 
-def test_written_rows_round_trip(tmp_path) -> None:
-    write_dataset(*result(), tmp_path, "1.0.0")
-    train = pd.read_parquet(tmp_path / "v1.0.0" / "train.parquet")
-    assert train["split"].tolist() == ["train"]
+def test_rows_survive_the_round_trip(tmp_path) -> None:
+    path = tmp_path / "train.parquet"
+    write_batches(reader(3), path)
+    assert pd.read_parquet(path)["polygon_id"].tolist() == ["p0", "p1", "p2"]
 
 
-def test_manifest_is_written_and_readable(tmp_path) -> None:
-    write_dataset(*result(), tmp_path, "1.0.0")
-    manifest = read_manifest(tmp_path / "v1.0.0")
-    assert manifest["counts"]["examples"]["total"] == 3
+def test_a_multi_batch_stream_is_written_as_one_file(tmp_path) -> None:
+    """The point of streaming: a split larger than memory costs one batch."""
+    path = tmp_path / "train.parquet"
+    write_batches(reader(7), path)
+    assert pq.ParquetFile(path).metadata.num_rows == 7
 
 
-def test_manifest_is_written_as_readable_json(tmp_path) -> None:
-    write_dataset(*result(), tmp_path, "1.0.0")
-    text = (tmp_path / "v1.0.0" / "manifest.json").read_text()
-    assert text.endswith("\n")
-    assert json.loads(text)["counts"]["examples"]["total"] == 3
-
-
-def test_versions_are_written_side_by_side(tmp_path) -> None:
-    write_dataset(*result(), tmp_path, "1.0.0")
-    write_dataset(*result(2), tmp_path, "1.1.0")
-    assert (tmp_path / "v1.0.0" / "manifest.json").exists()
-    assert (tmp_path / "v1.1.0" / "manifest.json").exists()
+def test_an_empty_stream_still_produces_a_file_with_the_schema(tmp_path) -> None:
+    """A consumer expecting three splits should find three."""
+    path = tmp_path / "test.parquet"
+    assert write_batches(reader(0), path) == 0
+    assert path.exists()
+    assert "polygon_id" in pq.ParquetFile(path).schema_arrow.names
 
 
 def test_writing_twice_is_byte_identical(tmp_path) -> None:
     """A rebuild of the same data must not produce a different file."""
-    a = write_dataset(*result(), tmp_path / "a", "1.0.0")
-    b = write_dataset(*result(), tmp_path / "b", "1.0.0")
-    for left, right in zip(a, b, strict=True):
-        assert left.read_bytes() == right.read_bytes()
+    a, b = tmp_path / "a.parquet", tmp_path / "b.parquet"
+    write_batches(reader(4), a)
+    write_batches(reader(4), b)
+    assert a.read_bytes() == b.read_bytes()
 
 
-def test_an_empty_split_still_produces_a_file(tmp_path) -> None:
-    write_dataset(*result(1), tmp_path, "1.0.0")
-    assert (tmp_path / "v1.0.0" / "test.parquet").exists()
-    assert len(pd.read_parquet(tmp_path / "v1.0.0" / "test.parquet")) == 0
+def test_manifest_is_written_as_readable_json(tmp_path) -> None:
+    path = write_manifest({"counts": {"examples": {"total": 3}}}, tmp_path / "manifest.json")
+    text = path.read_text()
+    assert text.endswith("\n")
+    assert json.loads(text)["counts"]["examples"]["total"] == 3
+
+
+def test_manifest_round_trips_through_read_manifest(tmp_path) -> None:
+    write_manifest({"counts": {"examples": {"total": 7}}}, tmp_path / "manifest.json")
+    assert read_manifest(tmp_path)["counts"]["examples"]["total"] == 7
 
 
 def test_read_manifest_rejects_a_missing_build(tmp_path) -> None:

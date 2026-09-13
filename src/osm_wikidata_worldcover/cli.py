@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-from osm_wikidata_worldcover.adapters.writer import read_manifest, write_dataset
+from osm_wikidata_worldcover.adapters.writer import read_manifest
 from osm_wikidata_worldcover.build import run_build
 from osm_wikidata_worldcover.config import Config
 from osm_wikidata_worldcover.finalize import StreamedBuild, finalize_shards
@@ -51,7 +51,7 @@ def build(
     )
     regions = list(region or []) + _read_regions(regions_file)
     report = run_build(config, regions=regions or None, keep_tiles=keep_tiles, progress=typer.echo)
-    _publish_locally(report.result, out, dataset_version)
+    _report(report.result)
 
 
 def _read_regions(path: Path | None) -> list[str]:
@@ -88,11 +88,11 @@ def assemble(
         source_revision=revision,
         dataset_version=dataset_version,
     )
-    result = finalize_shards(_gather(shard_dirs, work), config, work)
+    result = finalize_shards(_gather(shard_dirs, work), config, work, out)
     if result.rows == 0:
         typer.echo(f"no rows found in {[str(d) for d in shard_dirs]}", err=True)
         raise typer.Exit(1)
-    _publish_locally(result, out, dataset_version)
+    _report(result)
 
 
 def _build_config(
@@ -116,13 +116,12 @@ def _build_config(
     )
 
 
-def _publish_locally(result: StreamedBuild, out: Path, dataset_version: str) -> None:
-    """Write a finished build and report it, failing if a guarantee broke."""
-    paths = write_dataset(result.frames, result.manifest, out, dataset_version)
+def _report(result: StreamedBuild) -> None:
+    """Report a finished build, failing if a guarantee broke."""
     typer.echo(f"\nexamples: {result.rows:,}")
     for name, count in result.manifest.get("counts", {}).get("examples", {}).items():
         typer.echo(f"  {name}: {count:,}")
-    typer.echo(f"written: {paths[-1].parent}")
+    typer.echo(f"written: {result.paths[-1].parent}")
     if result.report.ok:
         return
     for violation in result.report.violations:

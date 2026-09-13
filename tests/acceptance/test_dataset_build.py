@@ -11,7 +11,6 @@ from shapely.geometry import Polygon
 from tests.conftest import write_raster
 
 from osm_wikidata_worldcover.adapters.source import RegionTables
-from osm_wikidata_worldcover.adapters.writer import write_dataset
 from osm_wikidata_worldcover.config import Config
 from osm_wikidata_worldcover.domain.nomenclature import is_valid_code
 from osm_wikidata_worldcover.finalize import finalize_shards
@@ -208,7 +207,11 @@ def build(world: World) -> None:
     shards.mkdir(parents=True, exist_ok=True)
     examples.to_parquet(shards / "alpha-latest.parquet", index=False)
     world.result = finalize_shards(
-        shards, config, world.scratch / "assembly", dict(outcome.rejections)
+        shards,
+        config,
+        world.scratch / "assembly",
+        world.scratch / "out",
+        dict(outcome.rejections),
     )
 
 
@@ -220,9 +223,9 @@ def _build(world: World) -> None:
 @when("I build the dataset twice")
 def _build_twice(world: World, tmp_path: Path) -> None:
     for run in ("a", "b"):
+        world.scratch = tmp_path / run
         build(world)
-        paths = write_dataset(world.result.frames, world.result.manifest, tmp_path / run, "1.0.0")
-        world.written.append([p.read_bytes() for p in paths])
+        world.written.append([p.read_bytes() for p in world.result.paths])
 
 
 # --------------------------------------------------------------------------
@@ -231,8 +234,9 @@ def _build_twice(world: World, tmp_path: Path) -> None:
 
 
 def _rows(world: World) -> pd.DataFrame:
-    """Every published row, across splits."""
-    return pd.concat(world.result.frames.values(), ignore_index=True)
+    """Every published row, read back from the files that were written."""
+    splits = [p for p in world.result.paths if p.suffix == ".parquet"]
+    return pd.concat([pd.read_parquet(p) for p in splits], ignore_index=True)
 
 
 @then(parsers.parse("the dataset contains {count:d} example"))
