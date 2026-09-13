@@ -148,6 +148,18 @@ def test_empty_shards_are_ignored(shards, tmp_path) -> None:
     assert finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out").rows == 2
 
 
+def test_reused_work_dir_does_not_retain_old_enriched_rows(shards, tmp_path) -> None:
+    work = tmp_path / "work"
+    shard(shards / "old.parquet")
+    finalize_shards(shards, Config(), work, work / "out")
+
+    (shards / "old.parquet").unlink()
+    shard(shards / "new.parquet", n=2, start=10)
+    result = finalize_shards(shards, Config(), work, work / "out")
+
+    assert result.rows == 2
+
+
 def test_shards_are_never_all_held_in_memory(shards, tmp_path, monkeypatch) -> None:
     """Guard the property that matters: one shard is read at a time."""
     import osm_wikidata_worldcover.finalize as module

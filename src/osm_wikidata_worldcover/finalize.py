@@ -18,6 +18,7 @@ global work is left to DuckDB over files, and the result is streamed to Parquet
 in batches rather than collected first.
 """
 
+import shutil
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,7 +65,9 @@ def finalize_shards(
     """Assemble region shards into the dataset written under ``out_dir``."""
     work_dir, out_dir = Path(work_dir), Path(out_dir)
     enriched = work_dir / "enriched"
-    enriched.mkdir(parents=True, exist_ok=True)
+    if enriched.exists():
+        shutil.rmtree(enriched)
+    enriched.mkdir(parents=True)
     target = out_dir / f"v{config.dataset_version}"
     target.mkdir(parents=True, exist_ok=True)
 
