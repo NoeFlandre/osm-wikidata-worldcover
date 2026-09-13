@@ -145,3 +145,95 @@ def test_regions_file_and_region_flags_combine(tmp_path, monkeypatch) -> None:
         ],
     )
     assert seen["regions"] == ["beta-latest", "alpha-latest"]
+
+
+def shard_file(path, n=3):
+    pd.DataFrame(
+        {
+            "polygon_id": [f"p{i}" for i in range(n)],
+            "osm_type": ["way"] * n,
+            "osm_id": list(range(n)),
+            "region": ["r"] * n,
+            "document_id": [f"d{i}" for i in range(n)],
+            "language": ["en"] * n,
+            "text": [" ".join(["word"] * 20) + f" {i}" for i in range(n)],
+            "worldcover_code": [10] * n,
+            "worldcover_label": ["Tree cover"] * n,
+            "dominant_fraction": [0.95] * n,
+            "lat": [49.6] * n,
+            "lon": [6.1] * n,
+        }
+    ).to_parquet(path, index=False)
+
+
+def test_assemble_turns_shards_into_a_dataset(tmp_path) -> None:
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    shard_file(shards / "a.parquet")
+    outcome = runner.invoke(cli.app, ["assemble", str(shards), "--out", str(tmp_path / "out")])
+    assert outcome.exit_code == 0, outcome.output
+    assert (tmp_path / "out" / "v1.0.0" / "train.parquet").exists()
+    assert (tmp_path / "out" / "v1.0.0" / "manifest.json").exists()
+
+
+def test_assemble_accepts_several_shard_directories(tmp_path) -> None:
+    """A build split across workers leaves one shard directory per worker."""
+    dirs = []
+    for name in ("w0", "w1"):
+        d = tmp_path / name
+        d.mkdir()
+        shard_file(d / f"{name}.parquet", n=2)
+        dirs.append(str(d))
+    outcome = runner.invoke(cli.app, ["assemble", *dirs, "--out", str(tmp_path / "out")])
+    assert outcome.exit_code == 0, outcome.output
+    train = pd.read_parquet(tmp_path / "out" / "v1.0.0" / "train.parquet")
+    assert len(train) >= 1
+
+
+def test_assemble_fails_when_a_guarantee_breaks(tmp_path) -> None:
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    shard_file(shards / "a.parquet")
+    frame = pd.read_parquet(shards / "a.parquet")
+    frame["dominant_fraction"] = 0.1
+    frame.to_parquet(shards / "a.parquet", index=False)
+    outcome = runner.invoke(cli.app, ["assemble", str(shards), "--out", str(tmp_path / "out")])
+    assert outcome.exit_code == 1
+    assert "below_threshold" in outcome.output
+
+
+def test_assemble_refuses_an_empty_shard_directory(tmp_path) -> None:
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    outcome = runner.invoke(cli.app, ["assemble", str(shards), "--out", str(tmp_path / "out")])
+    assert outcome.exit_code == 1
+
+
+def test_assemble_with_one_directory_uses_it_directly(tmp_path) -> None:
+    """A single shard directory needs no combined copy."""
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    shard_file(shards / "a.parquet")
+    outcome = runner.invoke(
+        cli.app,
+        ["assemble", str(shards), "--out", str(tmp_path / "out"), "--work", str(tmp_path / "work")],
+    )
+    assert outcome.exit_code == 0, outcome.output
+    assert not (tmp_path / "work" / "shards").exists()
+
+
+def test_assemble_does_not_inherit_a_previous_run(tmp_path) -> None:
+    """Regression: the combined directory is shared, so it must be emptied."""
+    work = tmp_path / "work"
+    (work / "shards").mkdir(parents=True)
+    (work / "shards" / "stale__old.parquet").write_bytes(b"not parquet")
+    dirs = []
+    for name in ("w0", "w1"):
+        d = tmp_path / name
+        d.mkdir()
+        shard_file(d / f"{name}.parquet", n=2)
+        dirs.append(str(d))
+    outcome = runner.invoke(
+        cli.app, ["assemble", *dirs, "--out", str(tmp_path / "out"), "--work", str(work)]
+    )
+    assert outcome.exit_code == 0, outcome.output
