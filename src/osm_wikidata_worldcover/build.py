@@ -100,27 +100,25 @@ def run_build(
     raw = Path(config.cache_dir) / "source"
 
     shards = ShardStore(Path(config.cache_dir) / "shards")
-    outcomes = [
-        _process_region(config, revision, stem, raw, tiles, shards, keep_tiles, progress)
-        for stem in _pending(stems, shards, progress)
-    ]
+    outcomes: list[RegionOutcome] = []
+    for index, stem in enumerate(stems, start=1):
+        # Announced as each region starts, not up front, so a long run shows
+        # where it actually is.
+        progress(_label(index, len(stems), stem, done=shards.has(stem)))
+        if not shards.has(stem):
+            outcomes.append(
+                _process_region(config, revision, stem, raw, tiles, shards, keep_tiles, progress)
+            )
 
     report = BuildReport(result=finalize([], config), regions=outcomes)
     report.result = finalize(shards.read(), config, rejections=report.rejections)
     return report
 
 
-def _pending(stems: Sequence[str], shards: ShardStore, progress: Progress) -> list[str]:
-    """Return the regions still to do, announcing the ones already finished."""
-    pending = []
-    for index, stem in enumerate(stems, start=1):
-        label = f"[{index}/{len(stems)}] {stem}"
-        if shards.has(stem):
-            progress(f"{label} (already done)")
-        else:
-            progress(label)
-            pending.append(stem)
-    return pending
+def _label(index: int, total: int, stem: str, done: bool) -> str:
+    """The progress line for one region."""
+    suffix = " (already done)" if done else ""
+    return f"[{index}/{total}] {stem}{suffix}"
 
 
 def _process_region(

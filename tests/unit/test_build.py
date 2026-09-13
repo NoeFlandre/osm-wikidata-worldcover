@@ -138,3 +138,30 @@ class TestRunBuild:
         monkeypatch.setattr(build_module.hub, "resolve_revision", explode)
         report = build_module.run_build(Config(cache_dir=tmp_path, source_revision="pinned"))
         assert report.result.frame["source_revision"].unique().tolist() == ["pinned"]
+
+
+def test_progress_is_reported_as_each_region_starts(tmp_path, monkeypatch) -> None:
+    """Regression: announcing every region up front hides where a long run is.
+
+    A list comprehension over a pre-computed "pending" list printed all 386
+    region names before any work began.
+    """
+    from osm_wikidata_worldcover import build as build_module
+    from osm_wikidata_worldcover.config import Config
+
+    seen: list[str] = []
+    helper = TestRunBuild()
+    module = helper._patch(monkeypatch, tmp_path, ["alpha", "beta"])
+    original = module._process_region
+
+    def spy(config, revision, stem, raw, tiles, shards, keep_tiles, progress):
+        seen.append(f"processing {stem}")
+        return original(config, revision, stem, raw, tiles, shards, keep_tiles, progress)
+
+    monkeypatch.setattr(build_module, "_process_region", spy)
+    module.run_build(Config(cache_dir=tmp_path), progress=seen.append)
+
+    # beta must not be announced before alpha has been processed.
+    assert seen.index("processing alpha") < next(
+        i for i, line in enumerate(seen) if line.startswith("[2/2] beta")
+    )
