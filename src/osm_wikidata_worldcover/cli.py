@@ -59,19 +59,12 @@ def verify(
     threshold: Annotated[float, typer.Option()] = 0.8,
 ) -> None:
     """Re-check a build on disk against every dataset guarantee."""
-    import pandas as pd
-
     from osm_wikidata_worldcover.domain.validation import validate
 
-    frames = [
-        pd.read_parquet(build_dir / f"{split}.parquet")
-        for split in ("train", "validation", "test")
-        if (build_dir / f"{split}.parquet").exists()
-    ]
-    if not frames:
+    rows = _load_splits(build_dir)
+    if rows is None:
         typer.echo(f"no splits found in {build_dir}", err=True)
         raise typer.Exit(1)
-    rows = pd.concat(frames, ignore_index=True).to_dict("records")
     report = validate(rows, threshold=threshold)
     typer.echo(f"rows: {report.rows:,}")
     if report.ok:
@@ -80,6 +73,20 @@ def verify(
     for violation in report.violations:
         typer.echo(f"FAILED {violation.check.value}: {violation.count} {violation.examples}")
     raise typer.Exit(1)
+
+
+def _load_splits(build_dir: Path) -> list[dict] | None:
+    """Read every split written under ``build_dir``, or ``None`` if there are none."""
+    import pandas as pd
+
+    frames = [
+        pd.read_parquet(build_dir / f"{split}.parquet")
+        for split in ("train", "validation", "test")
+        if (build_dir / f"{split}.parquet").exists()
+    ]
+    if not frames:
+        return None
+    return pd.concat(frames, ignore_index=True).to_dict("records")
 
 
 @app.command()

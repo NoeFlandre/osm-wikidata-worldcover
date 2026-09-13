@@ -60,13 +60,7 @@ class Config:
         unknown = set(raw) - known
         if unknown:
             raise ValueError(f"unknown config keys: {sorted(unknown)}")
-        data = dict(raw)
-        for key in ("out_dir", "cache_dir"):
-            if key in data:
-                data[key] = Path(data[key])
-        if "regions" in data and data["regions"] is not None:
-            data["regions"] = tuple(data["regions"])
-        return cls(**data)
+        return cls(**_coerce(dict(raw)))
 
     def with_overrides(self, **over: Any) -> Self:
         """Return a copy with ``over`` applied, ignoring ``None`` values."""
@@ -91,3 +85,14 @@ class Config:
             },
             "equal_area_crs": EQUAL_AREA_CRS,
         }
+
+
+def _coerce(data: dict[str, Any]) -> dict[str, Any]:
+    """Turn YAML's strings and lists into the types the dataclass declares."""
+    for key in ("out_dir", "cache_dir"):
+        if key in data:
+            data[key] = Path(data[key])
+    regions = data.get("regions")
+    if regions is not None:
+        data["regions"] = tuple(regions)
+    return data

@@ -90,15 +90,30 @@ def decide(
     if polygon_area <= 0.0:
         return DominanceOutcome(False, None, 0.0, RejectionReason.EMPTY_POLYGON)
 
-    fractions = class_fractions(areas_by_code, polygon_area)
-    thematic = {code: f for code, f in fractions.items() if is_valid_code(code)}
+    thematic = _thematic(areas_by_code, polygon_area)
     if not thematic:
         return DominanceOutcome(False, None, 0.0, RejectionReason.NO_VALID_CLASS)
 
-    # Highest fraction wins; equal fractions break on the lowest code so the
-    # result does not depend on mapping iteration order.
-    code = min(thematic, key=lambda c: (-thematic[c], c))
+    code = _winner(thematic)
     fraction = thematic[code]
     if fraction >= threshold:
         return DominanceOutcome(True, code, fraction)
     return DominanceOutcome(False, code, fraction, RejectionReason.BELOW_THRESHOLD)
+
+
+def _thematic(areas_by_code: Mapping[int, float], polygon_area: float) -> dict[int, float]:
+    """Return the shares of real land-cover classes, discarding no-data."""
+    return {
+        code: fraction
+        for code, fraction in class_fractions(areas_by_code, polygon_area).items()
+        if is_valid_code(code)
+    }
+
+
+def _winner(thematic: Mapping[int, float]) -> int:
+    """Return the dominant code.
+
+    The highest fraction wins; equal fractions break on the lowest code, so the
+    result never depends on mapping iteration order.
+    """
+    return min(thematic, key=lambda code: (-thematic[code], code))

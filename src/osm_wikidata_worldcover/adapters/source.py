@@ -116,9 +116,19 @@ class RegionTables:
 def _read(path: Path, columns: list[str]) -> pd.DataFrame:
     """Read ``columns`` from ``path``, tolerating a missing file or column."""
     if not path.exists():
-        return pd.DataFrame({name: pd.Series(dtype="object") for name in columns})
+        return _empty(columns)
     available = set(pq.ParquetFile(path).schema_arrow.names)
     frame = pd.read_parquet(path, columns=[c for c in columns if c in available])
+    return _with_all_columns(frame, columns)
+
+
+def _empty(columns: list[str]) -> pd.DataFrame:
+    """An empty frame carrying the expected columns, so callers need no special case."""
+    return pd.DataFrame({name: pd.Series(dtype="object") for name in columns})
+
+
+def _with_all_columns(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Fill in any column the source omitted, then project onto ``columns``."""
     for missing in set(columns) - set(frame.columns):
         frame[missing] = pd.Series([None] * len(frame), dtype="object")
     return frame[columns]

@@ -12,6 +12,7 @@ add up directly: a polygon straddling a tile boundary needs no mosaic, just
 the sum over the tiles it touches.
 """
 
+import math
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import Final
 
 import geopandas as gpd
+import numpy as np
 import rasterio
 import shapely
 from exactextract import exact_extract
@@ -114,15 +116,25 @@ def class_coverage(raster_paths: Iterable[Path], frame: gpd.GeoDataFrame) -> lis
     areas = shapely.area(frame.geometry.to_numpy())
 
     for path in raster_paths:
-        with rasterio.open(path) as dataset:
-            cell_area = abs(dataset.transform.a * dataset.transform.e)
-        result = exact_extract(str(path), frame, list(_OPS), output="pandas")
-        for index, (values, shares, observed) in enumerate(
-            zip(result["unique"], result["frac"], result["count"], strict=True)
-        ):
-            _accumulate(totals[index], values, shares, observed, cell_area, areas[index])
+        _add_raster(totals, path, frame, areas)
 
     return [dict(sorted(total.items())) for total in totals]
+
+
+def _add_raster(
+    totals: list[defaultdict[int, float]],
+    path: Path,
+    frame: gpd.GeoDataFrame,
+    areas: np.ndarray,
+) -> None:
+    """Add one raster's contribution to every polygon's running totals."""
+    with rasterio.open(path) as dataset:
+        cell_area = abs(dataset.transform.a * dataset.transform.e)
+    result = exact_extract(str(path), frame, list(_OPS), output="pandas")
+    for index, (values, shares, observed) in enumerate(
+        zip(result["unique"], result["frac"], result["count"], strict=True)
+    ):
+        _accumulate(totals[index], values, shares, observed, cell_area, areas[index])
 
 
 def _accumulate(
@@ -134,10 +146,21 @@ def _accumulate(
     polygon_area: float,
 ) -> None:
     """Convert shares-of-observed into shares-of-polygon and add them to ``into``."""
-    if polygon_area <= 0.0 or not observed_cells or observed_cells != observed_cells:
+    observed_share = _observed_share(observed_cells, cell_area, polygon_area)
+    if observed_share is None:
         return
-    observed_share = float(observed_cells) * cell_area / polygon_area
     for value, share in zip(values, shares, strict=True):
         contribution = float(share) * observed_share
         if contribution > 0.0:
             into[int(value)] += contribution
+
+
+def _observed_share(observed_cells: float, cell_area: float, polygon_area: float) -> float | None:
+    """What share of the polygon the raster actually observed, or ``None``.
+
+    exactextract reports NaN for a polygon that never met the raster, so a
+    non-finite count means no observation rather than a bad measurement.
+    """
+    if polygon_area <= 0.0 or not math.isfinite(observed_cells) or observed_cells <= 0.0:
+        return None
+    return float(observed_cells) * cell_area / polygon_area

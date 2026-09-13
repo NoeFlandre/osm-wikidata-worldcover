@@ -20,7 +20,45 @@ from osm_wikidata_worldcover.config import Config
 from osm_wikidata_worldcover.finalize import BuildResult, finalize
 from osm_wikidata_worldcover.pipeline import RegionOutcome, run_region
 
-__all__ = ["BuildReport", "run_build"]
+__all__ = ["BuildReport", "ShardStore", "run_build"]
+
+
+class ShardStore:
+    """Per-region results held on disk between the region pass and assembly.
+
+    A global run produces more text than is comfortable to keep in memory, and
+    takes long enough that it will sometimes be interrupted. Writing each
+    region as it completes solves both: memory stays bounded by one region, and
+    a restart skips whatever already finished.
+
+    A region that produced no examples still writes a file. That is a finished
+    result, and without it every restart would retry the empty regions forever.
+    """
+
+    def __init__(self, directory: Path) -> None:
+        self.directory = Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True)
+
+    def path_for(self, stem: str) -> Path:
+        return self.directory / f"{stem}.parquet"
+
+    def has(self, stem: str) -> bool:
+        """Whether ``stem`` has already been processed to completion."""
+        path = self.path_for(stem)
+        return path.exists() and path.stat().st_size > 0
+
+    def write(self, stem: str, frame: pd.DataFrame) -> None:
+        """Record ``stem``'s result, atomically."""
+        path = self.path_for(stem)
+        partial = path.with_suffix(path.suffix + ".part")
+        frame.to_parquet(partial, index=False)
+        partial.rename(path)
+
+    def read(self) -> list[pd.DataFrame]:
+        """Read every non-empty shard, in a deterministic order."""
+        frames = [pd.read_parquet(p) for p in sorted(self.directory.glob("*.parquet"))]
+        return [f for f in frames if len(f) > 0]
+
 
 Progress = Callable[[str], None]
 
@@ -61,21 +99,57 @@ def run_build(
     )
     raw = Path(config.cache_dir) / "source"
 
-    shards: list[pd.DataFrame] = []
-    outcomes: list[RegionOutcome] = []
-    for index, stem in enumerate(stems, start=1):
-        progress(f"[{index}/{len(stems)}] {stem}")
-        hub.snapshot_region(config.source_dataset, revision, stem, raw)
-        tables = RegionTables.load(raw, stem)
-        examples, outcome = run_region(config, tables, tiles, keep_tiles=keep_tiles)
-        if len(examples):
-            shards.append(examples)
-        outcomes.append(outcome)
-        progress(
-            f"    {outcome.polygons_seen} polygons -> "
-            f"{outcome.polygons_accepted} labelled -> {outcome.examples} examples"
-        )
+    shards = ShardStore(Path(config.cache_dir) / "shards")
+    outcomes = [
+        _process_region(config, revision, stem, raw, tiles, shards, keep_tiles, progress)
+        for stem in _pending(stems, shards, progress)
+    ]
 
     report = BuildReport(result=finalize([], config), regions=outcomes)
-    report.result = finalize(shards, config, rejections=report.rejections)
+    report.result = finalize(shards.read(), config, rejections=report.rejections)
     return report
+
+
+def _pending(stems: Sequence[str], shards: ShardStore, progress: Progress) -> list[str]:
+    """Return the regions still to do, announcing the ones already finished."""
+    pending = []
+    for index, stem in enumerate(stems, start=1):
+        label = f"[{index}/{len(stems)}] {stem}"
+        if shards.has(stem):
+            progress(f"{label} (already done)")
+        else:
+            progress(label)
+            pending.append(stem)
+    return pending
+
+
+def _process_region(
+    config: Config,
+    revision: str,
+    stem: str,
+    raw: Path,
+    tiles: WorldCoverTiles,
+    shards: ShardStore,
+    keep_tiles: bool,
+    progress: Progress,
+) -> RegionOutcome:
+    """Fetch, label and record one region."""
+    hub.snapshot_region(config.source_dataset, revision, stem, raw)
+    tables = RegionTables.load(raw, stem)
+    examples, outcome = run_region(config, tables, tiles, keep_tiles=keep_tiles)
+    shards.write(stem, examples)
+    _release_source(raw, stem)
+    progress(
+        f"    {outcome.polygons_seen} polygons -> "
+        f"{outcome.polygons_accepted} labelled -> {outcome.examples} examples"
+    )
+    return outcome
+
+
+def _release_source(raw: Path, stem: str) -> None:
+    """Delete a region's downloaded tables once its shard is written.
+
+    The full source snapshot is ~21 GB and none of it is needed again.
+    """
+    for path in hub.region_files(stem):
+        (raw / path).unlink(missing_ok=True)

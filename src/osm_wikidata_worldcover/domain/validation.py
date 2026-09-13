@@ -84,14 +84,16 @@ def validate(
 
     _record_leakage(tally, examples, Check.POLYGON_LEAKAGE, splits_by_polygon)
     _record_leakage(tally, examples, Check.DOCUMENT_LEAKAGE, splits_by_document)
+    return ValidationReport(total, _violations(tally, examples))
 
-    # Ordered by the Check enum so two runs over the same data report identically.
-    violations = [
+
+def _violations(tally: Counter[Check], examples: Mapping[Check, list[str]]) -> list[Violation]:
+    """Collect the failed checks, ordered by the enum so runs report identically."""
+    return [
         Violation(check, tally[check], tuple(sorted(examples[check])[:5]))
         for check in Check
         if tally[check]
     ]
-    return ValidationReport(total, violations)
 
 
 def _row_violations(
@@ -99,20 +101,30 @@ def _row_violations(
 ) -> Iterable[tuple[Check, str]]:
     """Yield the guarantees a single row breaks."""
     polygon_id = str(r["polygon_id"])
-    code = int(r["worldcover_code"])
+    yield from _label_violations(r, threshold, polygon_id)
+    yield from _text_violations(r, min_words, seen_keys, polygon_id)
 
+
+def _label_violations(
+    r: Mapping[str, Any], threshold: float, polygon_id: str
+) -> Iterable[tuple[Check, str]]:
+    """Yield violations of the split and label guarantees."""
     if str(r["split"]) not in _VALID_SPLITS:
         yield Check.INVALID_SPLIT, polygon_id
-    if CLASS_LABELS.get(code) != r["worldcover_label"]:
+    if CLASS_LABELS.get(int(r["worldcover_code"])) != r["worldcover_label"]:
         yield Check.INVALID_LABEL, polygon_id
     if float(r["dominant_fraction"]) < threshold:
         yield Check.BELOW_THRESHOLD, polygon_id
 
+
+def _text_violations(
+    r: Mapping[str, Any], min_words: int, seen_keys: set[str], polygon_id: str
+) -> Iterable[tuple[Check, str]]:
+    """Yield violations of the text guarantees, recording what has been seen."""
     text = str(r["text"])
     if not is_usable(text, min_words):
         yield Check.UNUSABLE_TEXT, polygon_id
-
-    key = dedup_key(text, str(code))
+    key = dedup_key(text, str(int(r["worldcover_code"])))
     if key in seen_keys:
         yield Check.DUPLICATE_EXAMPLE, polygon_id
     seen_keys.add(key)

@@ -59,7 +59,7 @@ ignore = ["TRY003"]
 max-complexity = 6
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["ARG001"]
+"tests/*" = ["ARG001", "ARG002", "ARG005"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

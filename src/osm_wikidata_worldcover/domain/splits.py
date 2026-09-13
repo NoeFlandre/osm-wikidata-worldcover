@@ -65,13 +65,18 @@ DEFAULT_RATIOS: Final[SplitRatios] = SplitRatios(0.8, 0.1, 0.1)
 
 def cell_for(lat: float, lon: float, resolution: int = DEFAULT_RESOLUTION) -> str:
     """Return the H3 cell id containing ``(lat, lon)``."""
-    if math.isnan(lat) or math.isnan(lon) or math.isinf(lat) or math.isinf(lon):
+    _check_coordinate(lat, lon)
+    return h3.latlng_to_cell(lat, lon, resolution)
+
+
+def _check_coordinate(lat: float, lon: float) -> None:
+    """Reject coordinates H3 cannot meaningfully place."""
+    if not (math.isfinite(lat) and math.isfinite(lon)):
         raise ValueError(f"non-finite coordinate ({lat!r}, {lon!r})")
     if not -90.0 <= lat <= 90.0:
         raise ValueError(f"latitude out of range: {lat!r}")
     if not -180.0 <= lon <= 180.0:
         raise ValueError(f"longitude out of range: {lon!r}")
-    return h3.latlng_to_cell(lat, lon, resolution)
 
 
 def assign_cell(cell: str, ratios: SplitRatios = DEFAULT_RATIOS, seed: int = DEFAULT_SEED) -> Split:

@@ -163,7 +163,17 @@ def _label_group(
     _tally(verdicts, set(kept), outcome)
     if not kept:
         return None
-    block = group.iloc[kept].copy()
+    return _block(group, kept, verdicts, coverages)
+
+
+def _block(
+    group: gpd.GeoDataFrame,
+    kept: Sequence[int],
+    verdicts: Sequence[DominanceOutcome],
+    coverages: Sequence[dict[int, float]],
+) -> pd.DataFrame:
+    """Attach the label columns to the rows that were accepted."""
+    block = group.iloc[list(kept)].copy()
     block["worldcover_code"] = [verdicts[i].code for i in kept]
     block["dominant_fraction"] = [verdicts[i].fraction for i in kept]
     block["observed_fraction"] = [sum(coverages[i].values()) for i in kept]
@@ -280,7 +290,14 @@ def _shape(examples: pd.DataFrame) -> pd.DataFrame:
         rounding_precision=7,
     )
     if "language_doc" in examples.columns:
+        # The document's own language is authoritative; the link table's copy
+        # is only a hint.
         examples["language"] = examples["language_doc"].fillna(examples["language"])
+    return _project(examples)
+
+
+def _project(examples: pd.DataFrame) -> pd.DataFrame:
+    """Narrow to the published schema, filling anything the source omitted."""
     for column in OUTPUT_COLUMNS:
         if column not in examples.columns:
             examples[column] = None
