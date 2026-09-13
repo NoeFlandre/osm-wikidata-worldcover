@@ -134,6 +134,11 @@ def finalize_shards(
     rows = sum(len(f) for f in frames.values())
     report = _validate_frames(frames, config)
     counts = _counts(pd.concat(frames.values(), ignore_index=True), rejections or {})
+    counts.deduplication = {
+        "duplicate_objects_across_regions": dropped_objects,
+        "duplicate_examples": dropped_examples,
+        "documents_split_across_splits": dropped_documents,
+    }
     return StreamedBuild(
         rows=rows,
         frames=frames,

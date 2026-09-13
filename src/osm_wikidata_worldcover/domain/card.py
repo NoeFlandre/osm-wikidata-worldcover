@@ -70,7 +70,11 @@ def render(manifest: Mapping[str, Any]) -> str:
             _coverage(manifest.get("geographic_coverage", {})),
             _guarantees(threshold_pct),
             _schema(),
-            _provenance(settings, manifest.get("rejections", {})),
+            _provenance(
+                settings,
+                manifest.get("rejections", {}),
+                manifest.get("deduplication", {}),
+            ),
         ]
     )
 
@@ -174,7 +178,11 @@ def _schema() -> str:
 """
 
 
-def _provenance(settings: Mapping[str, Any], rejections: Mapping[str, int]) -> str:
+def _provenance(
+    settings: Mapping[str, Any],
+    rejections: Mapping[str, int],
+    deduplication: Mapping[str, int],
+) -> str:
     lines = [
         "\n## Provenance\n",
         f"- Source: [`{settings.get('source_dataset')}`]"
@@ -194,6 +202,10 @@ def _provenance(settings: Mapping[str, Any], rejections: Mapping[str, int]) -> s
         lines.append("\n### Polygons refused\n\n")
         lines.append("| reason | polygons |\n| --- | --- |\n")
         lines += [f"| `{k}` | {v:,} |\n" for k, v in sorted(rejections.items())]
+    if deduplication:
+        lines.append("\n### Rows removed after labelling\n\n")
+        lines.append("| reason | rows |\n| --- | --- |\n")
+        lines += [f"| `{k}` | {v:,} |\n" for k, v in sorted(deduplication.items())]
     lines.append(
         "\n## Licence\n\n"
         "Article text is CC BY-SA 4.0 (Wikipedia/Wikivoyage). OpenStreetMap "

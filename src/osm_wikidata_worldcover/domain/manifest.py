@@ -38,6 +38,7 @@ class DatasetCounts:
     dominant_fraction_quantiles: dict[str, float]
     coverage: GeographicCoverage
     rejections: dict[str, int] = field(default_factory=dict)
+    deduplication: dict[str, int] = field(default_factory=dict)
 
 
 def build(counts: DatasetCounts, settings: Mapping[str, Any]) -> dict[str, Any]:
@@ -78,6 +79,7 @@ def build(counts: DatasetCounts, settings: Mapping[str, Any]) -> dict[str, Any]:
             ),
         },
         "rejections": dict(sorted(counts.rejections.items())),
+        "deduplication": dict(sorted(counts.deduplication.items())),
         "settings": dict(settings),
     }
 

@@ -75,3 +75,19 @@ def test_empty_dataset_reports_zero_without_dividing_by_zero(counts) -> None:
     manifest = build(counts, settings={})
     assert manifest["counts"]["examples"]["total"] == 0
     assert manifest["class_distribution"] == []
+
+
+def test_deduplication_counts_are_reported(counts) -> None:
+    """How many rows were dropped, and why, belongs in the manifest."""
+    counts.deduplication = {
+        "duplicate_objects_across_regions": 30,
+        "duplicate_examples": 8821,
+        "documents_split_across_splits": 30,
+    }
+    reported = build(counts, settings={})["deduplication"]
+    assert reported["duplicate_examples"] == 8821
+    assert reported["documents_split_across_splits"] == 30
+
+
+def test_deduplication_defaults_to_empty(counts) -> None:
+    assert build(counts, settings={})["deduplication"] == {}
