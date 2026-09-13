@@ -50,9 +50,9 @@ def build(
         dataset_version=dataset_version,
     )
     report = run_build(config, regions=region, keep_tiles=keep_tiles, progress=typer.echo)
-    paths = write_dataset(report.result.frame, report.result.manifest, out, dataset_version)
+    paths = write_dataset(report.result.frames, report.result.manifest, out, dataset_version)
 
-    typer.echo(f"\nexamples: {len(report.result.frame):,}")
+    typer.echo(f"\nexamples: {report.result.rows:,}")
     for name, count in report.result.manifest.get("counts", {}).get("examples", {}).items():
         typer.echo(f"  {name}: {count:,}")
     typer.echo(f"written: {paths[-1].parent}")

@@ -8,17 +8,22 @@ import pytest
 from osm_wikidata_worldcover.adapters.writer import read_manifest, write_dataset
 
 
-def result(n: int = 3) -> tuple[pd.DataFrame, dict]:
+def result(n: int = 3) -> tuple[dict[str, pd.DataFrame], dict]:
+    splits = ["train", "validation", "test"][:n] + ["train"] * max(0, n - 3)
     frame = pd.DataFrame(
         {
             "polygon_id": [f"p{i}" for i in range(n)],
             "document_id": [f"d{i}" for i in range(n)],
             "text": ["t"] * n,
             "worldcover_code": [10] * n,
-            "split": ["train", "validation", "test"][:n] + ["train"] * max(0, n - 3),
+            "split": splits,
         }
     )
-    return frame, {"counts": {"examples": {"total": n}}}
+    frames = {
+        name: frame[frame["split"] == name].reset_index(drop=True)
+        for name in ("train", "validation", "test")
+    }
+    return frames, {"counts": {"examples": {"total": n}}}
 
 
 def test_each_split_is_written_as_its_own_parquet(tmp_path) -> None:

@@ -21,14 +21,17 @@ MANIFEST_NAME = "manifest.json"
 def files_to_publish(build_dir: Path) -> list[Path]:
     """Return the files that make up a publishable build."""
     build_dir = Path(build_dir)
-    splits = [build_dir / f"{name}.parquet" for name in SPLIT_ORDER]
-    missing = [p.name for p in splits if not p.exists()]
+    expected = [build_dir / f"{name}.parquet" for name in SPLIT_ORDER]
+    expected.append(build_dir / MANIFEST_NAME)
+    _require(build_dir, expected)
+    return expected
+
+
+def _require(build_dir: Path, expected: list[Path]) -> None:
+    """Refuse a build that is missing any of the files a release needs."""
+    missing = [path.name for path in expected if not path.exists()]
     if missing:
         raise FileNotFoundError(f"{build_dir} is missing {missing}")
-    manifest = build_dir / MANIFEST_NAME
-    if not manifest.exists():
-        raise FileNotFoundError(f"{build_dir} has no {MANIFEST_NAME}")
-    return [*splits, manifest]
 
 
 def publish_dataset(

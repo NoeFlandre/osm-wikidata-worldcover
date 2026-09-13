@@ -13,6 +13,7 @@ place -- and every nearby place -- shares one split.
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -24,10 +25,7 @@ from osm_wikidata_worldcover.domain.splits import SplitRatios, assign_cell, cell
 from osm_wikidata_worldcover.domain.text import dedup_key
 from osm_wikidata_worldcover.domain.validation import ValidationReport, validate
 
-__all__ = ["BuildResult", "finalize"]
-
-#: Identifies one physical OSM object, independent of which region it came from.
-_OBJECT_KEY = ["osm_type", "osm_id", "document_id"]
+__all__ = ["StreamedBuild", "finalize_shards"]
 
 PROVENANCE_COLUMNS = (
     "h3_cell",
@@ -40,82 +38,11 @@ PROVENANCE_COLUMNS = (
 )
 
 
-@dataclass(slots=True)
-class BuildResult:
-    """A finished build and what had to be discarded to get there."""
-
-    frame: pd.DataFrame
-    manifest: dict[str, Any]
-    report: ValidationReport
-    duplicates_across_regions: int = 0
-    duplicate_examples: int = 0
-
-
-def finalize(
-    shards: Iterable[pd.DataFrame],
-    config: Config,
-    rejections: dict[str, int] | None = None,
-) -> BuildResult:
-    """Combine region shards into the published dataset."""
-    frame = _concat(shards)
-    if len(frame) == 0:
-        return BuildResult(frame, {}, validate([]))
-
-    frame, across_regions = _drop_repeated_objects(frame)
-    frame, repeated_text = _drop_repeated_examples(frame)
-    frame = _assign_splits(frame, config)
-    frame = _attach_provenance(frame, config)
-    frame = frame.sort_values(["polygon_id", "document_id"]).reset_index(drop=True)
-
-    report = validate(
-        frame.to_dict("records"), threshold=config.threshold, min_words=config.min_words
-    )
-    counts = _counts(frame, rejections or {})
-    return BuildResult(
-        frame=frame,
-        manifest=manifest_module.build(counts, config.as_manifest_settings()),
-        report=report,
-        duplicates_across_regions=across_regions,
-        duplicate_examples=repeated_text,
-    )
-
-
-def _concat(shards: Iterable[pd.DataFrame]) -> pd.DataFrame:
-    frames = [s for s in shards if len(s) > 0]
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
-
-def _drop_repeated_objects(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """Keep one copy of each OSM object, choosing the region deterministically."""
-    before = len(frame)
-    kept = (
-        frame.sort_values([*_OBJECT_KEY, "region", "polygon_id"])
-        .drop_duplicates(subset=_OBJECT_KEY, keep="first")
-        .reset_index(drop=True)
-    )
-    return kept, before - len(kept)
-
-
-def _drop_repeated_examples(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """Collapse examples whose text and label are both identical."""
-    before = len(frame)
-    keys = [
-        dedup_key(text, str(code))
-        for text, code in zip(frame["text"], frame["worldcover_code"], strict=True)
-    ]
-    kept = (
-        frame.assign(_key=keys)
-        .sort_values(["_key", "polygon_id", "document_id"])
-        .drop_duplicates(subset="_key", keep="first")
-        .drop(columns="_key")
-        .reset_index(drop=True)
-    )
-    return kept, before - len(kept)
-
-
-def _assign_splits(frame: pd.DataFrame, config: Config) -> pd.DataFrame:
+def _assign_splits(
+    frame: pd.DataFrame, config: Config, ratios: SplitRatios | None = None
+) -> pd.DataFrame:
     """Attach an H3 cell to every row and split on the cell, never on the row."""
-    ratios = SplitRatios(config.train_ratio, config.validation_ratio, config.test_ratio)
+    ratios = ratios or SplitRatios(config.train_ratio, config.validation_ratio, config.test_ratio)
     cells = [
         cell_for(lat, lon, config.h3_resolution)
         for lat, lon in zip(frame["lat"], frame["lon"], strict=True)
@@ -166,3 +93,139 @@ def _counts(frame: pd.DataFrame, rejections: dict[str, int]) -> DatasetCounts:
         ),
         rejections=dict(sorted(rejections.items())),
     )
+
+
+@dataclass(slots=True)
+class StreamedBuild:
+    """A finished build assembled without holding every shard in memory."""
+
+    rows: int
+    frames: dict[str, pd.DataFrame]
+    manifest: dict[str, Any]
+    report: ValidationReport
+    duplicates_across_regions: int = 0
+    duplicate_examples: int = 0
+
+
+def finalize_shards(
+    shard_dir: Path,
+    config: Config,
+    work_dir: Path,
+    rejections: dict[str, int] | None = None,
+) -> StreamedBuild:
+    """Assemble region shards into the published dataset, one shard at a time.
+
+    A global build is roughly 10 GB of DataFrame, more than the machine that
+    produces it. Everything row-local -- the H3 cell, the split, the duplicate
+    keys -- is computed per shard, where memory is bounded by one region. The
+    genuinely global work, which is only de-duplication and ordering, is then
+    left to DuckDB over the enriched files.
+    """
+    work_dir = Path(work_dir)
+    enriched = work_dir / "enriched"
+    enriched.mkdir(parents=True, exist_ok=True)
+
+    total = _enrich_shards(Path(shard_dir), enriched, config)
+    if total == 0:
+        return StreamedBuild(0, {}, {}, validate([]))
+
+    frames, dropped_objects, dropped_examples = _deduplicate(enriched)
+    rows = sum(len(f) for f in frames.values())
+    report = _validate_frames(frames, config)
+    counts = _counts(pd.concat(frames.values(), ignore_index=True), rejections or {})
+    return StreamedBuild(
+        rows=rows,
+        frames=frames,
+        manifest=manifest_module.build(counts, config.as_manifest_settings()),
+        report=report,
+        duplicates_across_regions=dropped_objects,
+        duplicate_examples=dropped_examples,
+    )
+
+
+def _enrich_shards(shard_dir: Path, enriched: Path, config: Config) -> int:
+    """Add the row-local columns to each shard in turn. Returns rows seen."""
+    ratios = SplitRatios(config.train_ratio, config.validation_ratio, config.test_ratio)
+    total = 0
+    for path in sorted(shard_dir.glob("*.parquet")):
+        frame = pd.read_parquet(path)
+        if len(frame) == 0 or "polygon_id" not in frame.columns:
+            continue
+        frame = _assign_splits(frame, config, ratios)
+        frame = _attach_provenance(frame, config)
+        frame["_dedup_key"] = [
+            dedup_key(text, str(code))
+            for text, code in zip(frame["text"], frame["worldcover_code"], strict=True)
+        ]
+        frame.to_parquet(enriched / path.name, index=False)
+        total += len(frame)
+    return total
+
+
+def _deduplicate(enriched: Path) -> tuple[dict[str, pd.DataFrame], int, int]:
+    """Collapse both kinds of duplicate across every shard, using DuckDB."""
+    import duckdb
+
+    pattern = str(enriched / "*.parquet")
+    con = duckdb.connect()
+    before = _count(con, f"SELECT count(*) FROM read_parquet('{pattern}')")
+
+    # One row per OSM object, then one per (text, label). Ordering inside each
+    # group is fully specified so the survivor never depends on file order.
+    con.execute(
+        f"""
+        CREATE TEMP TABLE kept AS
+        WITH one_per_object AS (
+            SELECT *, row_number() OVER (
+                PARTITION BY osm_type, osm_id, document_id
+                ORDER BY region, polygon_id
+            ) AS _object_rank
+            FROM read_parquet('{pattern}')
+        ),
+        objects AS (SELECT * FROM one_per_object WHERE _object_rank = 1),
+        one_per_example AS (
+            SELECT *, row_number() OVER (
+                PARTITION BY _dedup_key ORDER BY polygon_id, document_id
+            ) AS _example_rank
+            FROM objects
+        )
+        SELECT * EXCLUDE (_object_rank, _example_rank, _dedup_key)
+        FROM one_per_example WHERE _example_rank = 1
+        """
+    )
+    after_objects = _count(
+        con,
+        f"""SELECT count(*) FROM (
+            SELECT 1 FROM read_parquet('{pattern}')
+            QUALIFY row_number() OVER (
+                PARTITION BY osm_type, osm_id, document_id ORDER BY region, polygon_id
+            ) = 1)""",
+    )
+    after = _count(con, "SELECT count(*) FROM kept")
+
+    frames = {
+        split: con.execute(
+            "SELECT * FROM kept WHERE split = ? ORDER BY polygon_id, document_id", [split]
+        ).df()
+        for split in manifest_module.SPLIT_ORDER
+    }
+    con.close()
+    return frames, before - after_objects, after_objects - after
+
+
+def _validate_frames(frames: dict[str, pd.DataFrame], config: Config) -> ValidationReport:
+    """Validate every split without materialising them all as dicts at once."""
+
+    def rows() -> Iterable[dict[str, Any]]:
+        for frame in frames.values():
+            yield from frame.to_dict("records")
+
+    return validate(rows(), threshold=config.threshold, min_words=config.min_words)
+
+
+def _count(connection: Any, sql: str) -> int:
+    """Run a counting query, refusing the empty result a count cannot produce."""
+    row = connection.execute(sql).fetchone()
+    if row is None:
+        raise RuntimeError(f"count query returned no row: {sql}")
+    return int(row[0])

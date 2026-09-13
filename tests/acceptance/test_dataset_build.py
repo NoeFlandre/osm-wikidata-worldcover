@@ -14,7 +14,7 @@ from osm_wikidata_worldcover.adapters.source import RegionTables
 from osm_wikidata_worldcover.adapters.writer import write_dataset
 from osm_wikidata_worldcover.config import Config
 from osm_wikidata_worldcover.domain.nomenclature import is_valid_code
-from osm_wikidata_worldcover.finalize import finalize
+from osm_wikidata_worldcover.finalize import finalize_shards
 from osm_wikidata_worldcover.pipeline import RegionOutcome, run_region
 
 scenarios("features/dataset_build.feature")
@@ -34,11 +34,14 @@ class World:
         self.result = None
         self.outcome: RegionOutcome | None = None
         self.written: list[list[bytes]] = []
+        self.scratch: Path = Path()
 
 
 @pytest.fixture
-def world() -> World:
-    return World()
+def world(tmp_path: Path) -> World:
+    state = World()
+    state.scratch = tmp_path / "run"
+    return state
 
 
 class FixedTiles:
@@ -200,7 +203,13 @@ def build(world: World) -> None:
     config = Config()
     examples, outcome = run_region(config, tables, FixedTiles(world.raster))
     world.outcome = outcome
-    world.result = finalize([examples], config, rejections=dict(outcome.rejections))
+    # Assembly reads shards from disk, as it does in a real run.
+    shards = world.scratch / "shards"
+    shards.mkdir(parents=True, exist_ok=True)
+    examples.to_parquet(shards / "alpha-latest.parquet", index=False)
+    world.result = finalize_shards(
+        shards, config, world.scratch / "assembly", dict(outcome.rejections)
+    )
 
 
 @when("I build the dataset")
@@ -212,7 +221,7 @@ def _build(world: World) -> None:
 def _build_twice(world: World, tmp_path: Path) -> None:
     for run in ("a", "b"):
         build(world)
-        paths = write_dataset(world.result.frame, world.result.manifest, tmp_path / run, "1.0.0")
+        paths = write_dataset(world.result.frames, world.result.manifest, tmp_path / run, "1.0.0")
         world.written.append([p.read_bytes() for p in paths])
 
 
@@ -221,25 +230,30 @@ def _build_twice(world: World, tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
+def _rows(world: World) -> pd.DataFrame:
+    """Every published row, across splits."""
+    return pd.concat(world.result.frames.values(), ignore_index=True)
+
+
 @then(parsers.parse("the dataset contains {count:d} example"))
 @then(parsers.parse("the dataset contains {count:d} examples"))
 def _count(world: World, count: int) -> None:
-    assert len(world.result.frame) == count
+    assert world.result.rows == count
 
 
 @then("the dataset is empty")
 def _empty(world: World) -> None:
-    assert len(world.result.frame) == 0
+    assert world.result.rows == 0
 
 
 @then(parsers.parse('the example is labelled "{label}"'))
 def _label(world: World, label: str) -> None:
-    assert world.result.frame["worldcover_label"].tolist() == [label]
+    assert _rows(world)["worldcover_label"].tolist() == [label]
 
 
 @then(parsers.parse("the example's dominant fraction is at least {value:f}"))
 def _fraction(world: World, value: float) -> None:
-    assert world.result.frame["dominant_fraction"].min() >= value
+    assert _rows(world)["dominant_fraction"].min() >= value
 
 
 @then(parsers.parse('the polygon was rejected because "{reason}"'))
@@ -249,22 +263,22 @@ def _rejected(world: World, reason: str) -> None:
 
 @then("every example names the same polygon")
 def _same_polygon(world: World) -> None:
-    assert world.result.frame["polygon_id"].nunique() == 1
+    assert _rows(world)["polygon_id"].nunique() == 1
 
 
 @then("every example shares a single split")
 def _one_split(world: World) -> None:
-    assert world.result.frame["split"].nunique() == 1
+    assert _rows(world)["split"].nunique() == 1
 
 
 @then("no polygon appears in more than one split")
 def _no_polygon_leak(world: World) -> None:
-    assert (world.result.frame.groupby("polygon_id")["split"].nunique() > 1).sum() == 0
+    assert (_rows(world).groupby("polygon_id")["split"].nunique() > 1).sum() == 0
 
 
 @then("no document appears in more than one split")
 def _no_document_leak(world: World) -> None:
-    assert (world.result.frame.groupby("document_id")["split"].nunique() > 1).sum() == 0
+    assert (_rows(world).groupby("document_id")["split"].nunique() > 1).sum() == 0
 
 
 @then("the build reports no violations")
@@ -274,7 +288,7 @@ def _no_violations(world: World) -> None:
 
 @then("every label is a real WorldCover class")
 def _valid_labels(world: World) -> None:
-    assert all(is_valid_code(int(c)) for c in world.result.frame["worldcover_code"])
+    assert all(is_valid_code(int(c)) for c in _rows(world)["worldcover_code"])
 
 
 @then("both builds produce byte-identical files")

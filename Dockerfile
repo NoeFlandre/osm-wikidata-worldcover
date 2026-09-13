@@ -11,6 +11,12 @@ ENV UV_COMPILE_BYTECODE=1 \
     HF_HOME=/data/hf \
     PATH="/app/.venv/bin:$PATH"
 
+# exactextract ships no aarch64 wheel, so it is compiled from source and needs
+# a C/C++ toolchain and GEOS headers. Everything else installs as a wheel.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential cmake libgeos-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Dependencies resolve from the lockfile alone, so this layer is cached until

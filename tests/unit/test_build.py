@@ -97,7 +97,7 @@ class TestRunBuild:
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
         report = module.run_build(Config(cache_dir=tmp_path))
-        assert len(report.result.frame) == 2
+        assert report.result.rows == 2
         assert len(report.regions) == 2
 
     def test_a_finished_region_is_skipped_on_a_rerun(self, tmp_path, monkeypatch) -> None:
@@ -108,7 +108,7 @@ class TestRunBuild:
         module.run_build(config)
         second = module.run_build(config)
         assert second.regions == []  # nothing re-processed
-        assert len(second.result.frame) == 2  # but the data is still there
+        assert second.result.rows == 2  # but the data is still there
 
     def test_rejections_are_summed_across_regions(self, tmp_path, monkeypatch) -> None:
         from osm_wikidata_worldcover.config import Config
@@ -137,7 +137,8 @@ class TestRunBuild:
 
         monkeypatch.setattr(build_module.hub, "resolve_revision", explode)
         report = build_module.run_build(Config(cache_dir=tmp_path, source_revision="pinned"))
-        assert report.result.frame["source_revision"].unique().tolist() == ["pinned"]
+        revisions = pd.concat(report.result.frames.values())["source_revision"].unique()
+        assert revisions.tolist() == ["pinned"]
 
 
 def test_progress_is_reported_as_each_region_starts(tmp_path, monkeypatch) -> None:

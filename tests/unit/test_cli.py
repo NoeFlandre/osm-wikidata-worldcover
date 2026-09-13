@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from osm_wikidata_worldcover import cli
 from osm_wikidata_worldcover.domain.validation import Check, ValidationReport, Violation
-from osm_wikidata_worldcover.finalize import BuildResult
+from osm_wikidata_worldcover.finalize import StreamedBuild
 
 runner = CliRunner()
 
@@ -19,6 +19,13 @@ MANIFEST = {
     ],
     "language_distribution": [{"language": "en", "examples": 4, "share": 1.0}],
 }
+
+
+def split_frames(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    return {
+        name: frame[frame["split"] == name].reset_index(drop=True)
+        for name in ("train", "validation", "test")
+    }
 
 
 def frame(n: int = 4) -> pd.DataFrame:
@@ -38,7 +45,7 @@ def frame(n: int = 4) -> pd.DataFrame:
 
 
 def test_build_writes_a_dataset_and_reports_counts(tmp_path, monkeypatch) -> None:
-    result = BuildResult(frame(), MANIFEST, ValidationReport(4))
+    result = StreamedBuild(4, split_frames(frame()), MANIFEST, ValidationReport(4))
     monkeypatch.setattr(cli, "run_build", lambda *a, **k: type("R", (), {"result": result})())
     outcome = runner.invoke(cli.app, ["build", "--out", str(tmp_path), "--cache", str(tmp_path)])
     assert outcome.exit_code == 0, outcome.output
@@ -48,7 +55,7 @@ def test_build_writes_a_dataset_and_reports_counts(tmp_path, monkeypatch) -> Non
 
 def test_build_fails_when_a_guarantee_is_broken(tmp_path, monkeypatch) -> None:
     report = ValidationReport(4, [Violation(Check.POLYGON_LEAKAGE, 2, ("p1",))])
-    result = BuildResult(frame(), MANIFEST, report)
+    result = StreamedBuild(4, split_frames(frame()), MANIFEST, report)
     monkeypatch.setattr(cli, "run_build", lambda *a, **k: type("R", (), {"result": result})())
     outcome = runner.invoke(cli.app, ["build", "--out", str(tmp_path), "--cache", str(tmp_path)])
     assert outcome.exit_code == 1

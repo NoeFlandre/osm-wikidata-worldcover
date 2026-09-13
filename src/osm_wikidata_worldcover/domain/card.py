@@ -4,7 +4,7 @@ Pure: the card is a function of the manifest alone, so the published
 description can never drift from the data it describes.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 __all__ = ["render"]
@@ -202,7 +202,7 @@ def _provenance(settings: Mapping[str, Any], rejections: Mapping[str, int]) -> s
     return "".join(lines)
 
 
-def _table(title: str, header: tuple[str, ...], rows: list[tuple[str, ...]]) -> str:
+def _table(title: str, header: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     if not rows:
         return ""
     out = [f"\n## {title}\n\n", "| " + " | ".join(header) + " |\n"]

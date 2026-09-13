@@ -26,12 +26,15 @@ MANIFEST_NAME = "manifest.json"
 
 
 def write_dataset(
-    frame: pd.DataFrame, manifest: Mapping[str, Any], out_dir: Path, version: str
+    frames: Mapping[str, pd.DataFrame],
+    manifest: Mapping[str, Any],
+    out_dir: Path,
+    version: str,
 ) -> list[Path]:
-    """Write every split of ``frame`` and ``manifest`` under ``out_dir/v<version>``.
+    """Write each split in ``frames`` and ``manifest`` under ``out_dir/v<version>``.
 
-    Splitting happens on the frame's own ``split`` column, so the writer needs
-    to know nothing about how that column was decided.
+    Takes one frame per split, so the writer needs to know nothing about how
+    the split was decided -- or hold every split at once.
     """
     target = Path(out_dir) / f"v{version}"
     target.mkdir(parents=True, exist_ok=True)
@@ -39,11 +42,9 @@ def write_dataset(
     written: list[Path] = []
     for split in SPLIT_ORDER:
         path = target / f"{split}.parquet"
-        rows = (
-            frame[frame["split"] == split].reset_index(drop=True)
-            if "split" in frame.columns
-            else frame
-        )
+        rows = frames.get(split)
+        if rows is None:
+            rows = pd.DataFrame()
         # store_schema=False keeps pandas' own metadata -- which embeds index
         # bookkeeping -- out of the file, so equal data means equal bytes.
         pq.write_table(

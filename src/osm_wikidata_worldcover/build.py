@@ -17,7 +17,7 @@ from osm_wikidata_worldcover.adapters import hub
 from osm_wikidata_worldcover.adapters.source import RegionTables
 from osm_wikidata_worldcover.adapters.worldcover import WorldCoverTiles
 from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.finalize import BuildResult, finalize
+from osm_wikidata_worldcover.finalize import StreamedBuild, finalize_shards
 from osm_wikidata_worldcover.pipeline import RegionOutcome, run_region
 
 __all__ = ["BuildReport", "ShardStore", "run_build"]
@@ -67,16 +67,13 @@ Progress = Callable[[str], None]
 class BuildReport:
     """The outcome of a whole build."""
 
-    result: BuildResult
+    result: StreamedBuild
     regions: list[RegionOutcome] = field(default_factory=list)
 
     @property
     def rejections(self) -> dict[str, int]:
         """Why polygons were refused, summed over every region."""
-        total: Counter[str] = Counter()
-        for region in self.regions:
-            total.update(region.rejections)
-        return dict(total)
+        return _summed(self.regions)
 
 
 def run_build(
@@ -103,9 +100,21 @@ def run_build(
     shards = ShardStore(Path(config.cache_dir) / "shards")
     outcomes = _run_regions(config, revision, stems, raw, tiles, shards, keep_tiles, progress)
 
-    report = BuildReport(result=finalize([], config), regions=outcomes)
-    report.result = finalize(shards.read(), config, rejections=report.rejections)
-    return report
+    rejections = _summed(outcomes)
+    return BuildReport(
+        result=finalize_shards(
+            shards.directory, config, Path(config.cache_dir) / "assembly", rejections
+        ),
+        regions=outcomes,
+    )
+
+
+def _summed(outcomes: Sequence[RegionOutcome]) -> dict[str, int]:
+    """Why polygons were refused, summed over every region."""
+    total: Counter[str] = Counter()
+    for outcome in outcomes:
+        total.update(outcome.rejections)
+    return dict(total)
 
 
 def _run_regions(

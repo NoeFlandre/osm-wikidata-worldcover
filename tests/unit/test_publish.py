@@ -83,3 +83,12 @@ def test_publish_defaults_to_a_public_dataset(build, monkeypatch) -> None:
     monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.HfApi", FakeApi)
     publish_dataset(build, "someone/thing")
     assert seen["private"] is False
+
+
+def test_a_build_without_a_manifest_is_refused(tmp_path) -> None:
+    target = tmp_path / "v1.0.0"
+    target.mkdir()
+    for split in ("train", "validation", "test"):
+        pd.DataFrame({"polygon_id": ["p"]}).to_parquet(target / f"{split}.parquet", index=False)
+    with pytest.raises(FileNotFoundError, match=r"manifest\.json"):
+        files_to_publish(target)
