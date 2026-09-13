@@ -46,6 +46,24 @@ instead of at full resolution. `exactextract` does not expose overview
 selection, so this needs a second, decimated code path — worth it only if
 those 1,099 rows are wanted.
 
+## Articles describing several distant places lose rows
+
+One article can describe many places — a river, a mountain range, a chain of
+monuments. Those polygons fall in different H3 cells and therefore different
+splits, so the document would appear in train *and* test.
+
+*Why it exists:* the alternative is moving every row of that document into one
+split, which breaks the geographic blocking the splits exist to provide. The
+rows in the minority splits are dropped instead.
+
+*Mitigation in place:* the count is reported as `documents_split_across_splits`
+so the loss is visible. On a partial global build it was 30 rows.
+
+*Cleanup path:* group cells into connected components joined by shared
+documents and split per component. Risky: one article about a continent could
+chain most of the world into a single component, so measure component sizes
+before adopting it.
+
 ## Split boundaries are cell edges, not buffers
 
 H3 blocking guarantees that everything *within* a cell shares a split, but two

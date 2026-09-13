@@ -105,6 +105,7 @@ class StreamedBuild:
     report: ValidationReport
     duplicates_across_regions: int = 0
     duplicate_examples: int = 0
+    documents_split_across_splits: int = 0
 
 
 def finalize_shards(
@@ -129,7 +130,7 @@ def finalize_shards(
     if total == 0:
         return StreamedBuild(0, {}, {}, validate([]))
 
-    frames, dropped_objects, dropped_examples = _deduplicate(enriched)
+    frames, dropped_objects, dropped_examples, dropped_documents = _deduplicate(enriched)
     rows = sum(len(f) for f in frames.values())
     report = _validate_frames(frames, config)
     counts = _counts(pd.concat(frames.values(), ignore_index=True), rejections or {})
@@ -140,6 +141,7 @@ def finalize_shards(
         report=report,
         duplicates_across_regions=dropped_objects,
         duplicate_examples=dropped_examples,
+        documents_split_across_splits=dropped_documents,
     )
 
 
@@ -162,44 +164,83 @@ def _enrich_shards(shard_dir: Path, enriched: Path, config: Config) -> int:
     return total
 
 
-def _deduplicate(enriched: Path) -> tuple[dict[str, pd.DataFrame], int, int]:
-    """Collapse both kinds of duplicate across every shard, using DuckDB."""
+def _deduplicate(enriched: Path) -> tuple[dict[str, pd.DataFrame], int, int, int]:
+    """Collapse duplicates and split conflicts across every shard, using DuckDB.
+
+    Three distinct problems, applied in order, each counted separately:
+
+    1. Geofabrik extracts overlap, so one OSM object appears in several regions
+       under different ``polygon_id`` values. One region is chosen per object,
+       so an object wears a single id for all of its documents.
+    2. Distinct objects can carry byte-identical text under the same label.
+    3. One article can describe several distant places, which fall in different
+       cells and therefore different splits. The split holding most of that
+       document's rows keeps them; the rest are dropped, because moving them
+       instead would break the geographic blocking.
+
+    Every ordering is fully specified, so no survivor depends on file order.
+    """
     import duckdb
 
     pattern = str(enriched / "*.parquet")
     con = duckdb.connect()
     before = _count(con, f"SELECT count(*) FROM read_parquet('{pattern}')")
 
-    # One row per OSM object, then one per (text, label). Ordering inside each
-    # group is fully specified so the survivor never depends on file order.
     con.execute(
         f"""
-        CREATE TEMP TABLE kept AS
-        WITH one_per_object AS (
-            SELECT *, row_number() OVER (
-                PARTITION BY osm_type, osm_id, document_id
-                ORDER BY region, polygon_id
-            ) AS _object_rank
-            FROM read_parquet('{pattern}')
+        CREATE TEMP TABLE objects AS
+        WITH home_region AS (
+            SELECT osm_type, osm_id, region AS _home_region
+            FROM (
+                SELECT osm_type, osm_id, region, row_number() OVER (
+                    PARTITION BY osm_type, osm_id ORDER BY region
+                ) AS _rank
+                FROM (SELECT DISTINCT osm_type, osm_id, region FROM read_parquet('{pattern}'))
+            ) WHERE _rank = 1
         ),
-        objects AS (SELECT * FROM one_per_object WHERE _object_rank = 1),
-        one_per_example AS (
-            SELECT *, row_number() OVER (
-                PARTITION BY _dedup_key ORDER BY polygon_id, document_id
-            ) AS _example_rank
-            FROM objects
+        canonical AS (
+            SELECT r.* FROM read_parquet('{pattern}') r
+            JOIN home_region h USING (osm_type, osm_id)
+            WHERE r.region = h._home_region
         )
-        SELECT * EXCLUDE (_object_rank, _example_rank, _dedup_key)
-        FROM one_per_example WHERE _example_rank = 1
+        SELECT * EXCLUDE (_rank) FROM (
+            SELECT *, row_number() OVER (
+                PARTITION BY osm_type, osm_id, document_id ORDER BY polygon_id
+            ) AS _rank
+            FROM canonical
+        ) WHERE _rank = 1
         """
     )
-    after_objects = _count(
-        con,
-        f"""SELECT count(*) FROM (
-            SELECT 1 FROM read_parquet('{pattern}')
-            QUALIFY row_number() OVER (
-                PARTITION BY osm_type, osm_id, document_id ORDER BY region, polygon_id
-            ) = 1)""",
+    after_objects = _count(con, "SELECT count(*) FROM objects")
+
+    con.execute(
+        """
+        CREATE TEMP TABLE examples AS
+        SELECT * EXCLUDE (_rank, _dedup_key) FROM (
+            SELECT *, row_number() OVER (
+                PARTITION BY _dedup_key ORDER BY polygon_id, document_id
+            ) AS _rank
+            FROM objects
+        ) WHERE _rank = 1
+        """
+    )
+    after_examples = _count(con, "SELECT count(*) FROM examples")
+
+    con.execute(
+        """
+        CREATE TEMP TABLE kept AS
+        WITH document_home AS (
+            SELECT document_id, split AS _home FROM (
+                SELECT document_id, split, count(*) AS n, row_number() OVER (
+                    PARTITION BY document_id ORDER BY count(*) DESC, split
+                ) AS _rank
+                FROM examples GROUP BY document_id, split
+            ) WHERE _rank = 1
+        )
+        SELECT e.* FROM examples e
+        JOIN document_home h USING (document_id)
+        WHERE e.split = h._home
+        """
     )
     after = _count(con, "SELECT count(*) FROM kept")
 
@@ -210,7 +251,7 @@ def _deduplicate(enriched: Path) -> tuple[dict[str, pd.DataFrame], int, int]:
         for split in manifest_module.SPLIT_ORDER
     }
     con.close()
-    return frames, before - after_objects, after_objects - after
+    return frames, before - after_objects, after_objects - after_examples, after_examples - after
 
 
 def _validate_frames(frames: dict[str, pd.DataFrame], config: Config) -> ValidationReport:

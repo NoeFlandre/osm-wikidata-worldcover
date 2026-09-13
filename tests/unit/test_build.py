@@ -66,11 +66,14 @@ class TestRunBuild:
         )
 
         def fake_run_region(config, tables, tiles, keep_tiles=False):
+            # Distinct objects need distinct osm ids: sharing an id across
+            # regions means the same object, which assembly collapses.
+            base = abs(hash(tables.stem)) % 1000 * 100
             rows = pd.DataFrame(
                 {
                     "polygon_id": [f"{tables.stem}:{i}" for i in range(examples_per_region)],
                     "osm_type": ["way"] * examples_per_region,
-                    "osm_id": list(range(examples_per_region)),
+                    "osm_id": [base + i for i in range(examples_per_region)],
                     "region": [tables.stem] * examples_per_region,
                     "document_id": [f"{tables.stem}-d{i}" for i in range(examples_per_region)],
                     "language": ["en"] * examples_per_region,

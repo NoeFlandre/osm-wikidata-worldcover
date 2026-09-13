@@ -157,3 +157,125 @@ def test_shards_are_never_all_held_in_memory(shards, tmp_path, monkeypatch) -> N
         shard(shards / f"s{i}.parquet", n=2, start=i * 10)
     finalize_shards(shards, Config(), tmp_path / "work")
     assert peak == 1
+
+
+def linked(path, polygon_ids, document_id, lats, lons, region="alpha", codes=None):
+    """Rows sharing one document across several polygons.
+
+    Distinct labels matter: identical text under one label is collapsed by the
+    duplicate rule, which would mask the leak rather than fix it.
+    """
+    n = len(polygon_ids)
+    codes = codes or [10] * n
+    labels = {10: "Tree cover", 20: "Shrubland", 30: "Grassland", 50: "Built-up"}
+    pd.DataFrame(
+        {
+            "polygon_id": [f"{region}-latest:way:{i}" for i in polygon_ids],
+            "osm_type": ["way"] * n,
+            "osm_id": list(polygon_ids),
+            "region": [region] * n,
+            "name": ["N"] * n,
+            "wikidata": ["Q1"] * n,
+            "document_id": [document_id] * n,
+            "project": ["wikipedia"] * n,
+            "language": ["en"] * n,
+            "title": ["T"] * n,
+            "url": ["u"] * n,
+            "text": [f"{TEXT} {document_id}"] * n,
+            "lead_text": ["lead"] * n,
+            "text_words": [31] * n,
+            "worldcover_code": list(codes),
+            "worldcover_label": [labels[c] for c in codes],
+            "dominant_fraction": [0.95] * n,
+            "observed_fraction": [1.0] * n,
+            "lat": list(lats),
+            "lon": list(lons),
+            "centroid_wkt": ["POINT (0 0)"] * n,
+            "polygon_area_m2": [1000.0] * n,
+            "source_pbf": [f"{region}-latest.osm.pbf"] * n,
+        }
+    ).to_parquet(path, index=False)
+
+
+class TestDocumentLeakage:
+    """One article can describe several distant polygons.
+
+    Those polygons fall in different H3 cells and therefore different splits,
+    which would put the same document in train and test. Found by running the
+    assembly over real shards: 23 documents leaked across splits.
+    """
+
+    def test_a_document_spanning_distant_places_never_straddles_splits(
+        self, shards, tmp_path
+    ) -> None:
+        linked(
+            shards / "a.parquet",
+            polygon_ids=[1, 2, 3, 4],
+            document_id="shared",
+            lats=[49.6, 35.7, -33.9, 60.2],  # Luxembourg, Tokyo, Sydney, Helsinki
+            lons=[6.1, 139.7, 151.2, 24.9],
+            codes=[10, 20, 30, 50],
+        )
+        result = finalize_shards(shards, Config(), tmp_path / "work")
+        rows = pd.concat(result.frames.values())
+        assert rows["split"].nunique() == 1
+        assert result.report.ok
+
+    def test_the_dropped_rows_are_counted(self, shards, tmp_path) -> None:
+        linked(
+            shards / "a.parquet",
+            polygon_ids=[1, 2, 3, 4],
+            document_id="shared",
+            lats=[49.6, 35.7, -33.9, 60.2],
+            lons=[6.1, 139.7, 151.2, 24.9],
+            codes=[10, 20, 30, 50],
+        )
+        result = finalize_shards(shards, Config(), tmp_path / "work")
+        assert result.documents_split_across_splits > 0
+
+    def test_a_document_confined_to_one_cell_keeps_every_row(self, shards, tmp_path) -> None:
+        linked(
+            shards / "a.parquet",
+            polygon_ids=[1, 2, 3],
+            document_id="local",
+            lats=[49.600, 49.601, 49.602],
+            lons=[6.100, 6.101, 6.102],
+            codes=[10, 20, 30],
+        )
+        result = finalize_shards(shards, Config(), tmp_path / "work")
+        assert result.rows == 3
+        assert result.documents_split_across_splits == 0
+
+    def test_the_surviving_split_is_deterministic(self, shards, tmp_path) -> None:
+        for name in ("a", "b"):
+            linked(
+                shards / f"{name}.parquet",
+                polygon_ids=[1, 2, 3, 4],
+                document_id="shared",
+                lats=[49.6, 35.7, -33.9, 60.2],
+                lons=[6.1, 139.7, 151.2, 24.9],
+                codes=[10, 20, 30, 50],
+            )
+        first = finalize_shards(shards, Config(), tmp_path / "w1")
+        second = finalize_shards(shards, Config(), tmp_path / "w2")
+        assert (
+            pd.concat(first.frames.values())["split"].tolist()
+            == pd.concat(second.frames.values())["split"].tolist()
+        )
+
+
+class TestOneRegionPerObject:
+    """The same OSM object must not appear under two polygon_ids.
+
+    Geofabrik extracts overlap, and a region prefix is part of polygon_id, so
+    picking the region per (object, document) let one object wear two ids.
+    """
+
+    def test_an_object_in_two_regions_uses_one_region_for_every_document(
+        self, shards, tmp_path
+    ) -> None:
+        for region in ("luxembourg", "belgium"):
+            shard(shards / f"{region}.parquet", n=2, start=0, region=region)
+        result = finalize_shards(shards, Config(), tmp_path / "work")
+        rows = pd.concat(result.frames.values())
+        assert rows["region"].nunique() == 1
