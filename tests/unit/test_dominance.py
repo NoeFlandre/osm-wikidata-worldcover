@@ -12,7 +12,7 @@ from osm_wikidata_worldcover.domain.dominance import (
 
 
 def test_fractions_are_relative_to_the_polygon_area_not_the_covered_area() -> None:
-    # Half the polygon is not covered by CORINE at all; the covered half is one class.
+    # Half the polygon is unobserved; the observed half is a single class.
     fractions = class_fractions({10: 50.0}, polygon_area=100.0)
     assert fractions == {10: pytest.approx(0.5)}
 
