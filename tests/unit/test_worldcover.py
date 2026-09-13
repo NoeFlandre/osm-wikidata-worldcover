@@ -41,19 +41,24 @@ class TestClassCoverage:
         left = one(Polygon([(0, 0), (0, 4), (2, 4), (2, 0)]))
         assert class_coverage([half_and_half], left) == [{10: pytest.approx(1.0)}]
 
-    def test_partial_pixels_are_weighted_by_area_not_counted_whole(
-        self, half_and_half
-    ) -> None:
+    def test_partial_pixels_are_weighted_by_area_not_counted_whole(self, half_and_half) -> None:
         # Spans 1.5 columns of class 10 and 0.5 of class 50.
         strip = one(Polygon([(0.5, 0), (0.5, 4), (2.5, 4), (2.5, 0)]))
         assert class_coverage([half_and_half], strip) == [
             {10: pytest.approx(0.75), 50: pytest.approx(0.25)}
         ]
 
-    def test_nodata_is_reported_so_it_can_defeat_dominance(self, with_nodata, square) -> None:
+    def test_nodata_is_absent_and_leaves_the_polygon_only_half_covered(
+        self, with_nodata, square
+    ) -> None:
+        """No-data is not a class, so it is reported as missing coverage.
+
+        Renormalising over observed pixels would label a half-unobserved
+        polygon with full confidence; leaving the gap lets dominance refuse it.
+        """
         coverage = class_coverage([with_nodata], square)[0]
-        assert coverage[10] == pytest.approx(0.5)
-        assert coverage[0] == pytest.approx(0.5)
+        assert coverage == {10: pytest.approx(0.5)}
+        assert sum(coverage.values()) == pytest.approx(0.5)
 
     def test_a_polygon_outside_the_raster_has_no_coverage(self, half_and_half) -> None:
         far = one(Polygon([(50, 50), (50, 51), (51, 51), (51, 50)]))
