@@ -44,3 +44,16 @@ def test_multipolygon_is_usable() -> None:
     from shapely.geometry import MultiPolygon
 
     assert is_usable_polygon(MultiPolygon([SQUARE, Polygon([(2, 2), (2, 3), (3, 3)])]))
+
+
+def test_an_invalid_polygon_with_positive_area_is_rejected() -> None:
+    """Validity and area are both required, not either.
+
+    Mutation testing found `and` could become `or` undetected: the bow-tie case
+    has zero area, so it never distinguished the two. A hole outside its shell
+    is invalid *and* has positive area, which does.
+    """
+    hole_outside = wkt.loads("POLYGON ((0 0, 2 0, 2 2, 0 2, 0 0), (3 3, 4 3, 4 4, 3 3))")
+    assert hole_outside.area > 0
+    assert not hole_outside.is_valid
+    assert not is_usable_polygon(hole_outside)

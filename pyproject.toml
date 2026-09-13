@@ -87,5 +87,9 @@ do_not_mutate = [
     "*/adapters/*",
     "*/cli.py",
     "*/config.py",
+    # card.py is a prose template. Its mutants rewrite headings, URLs and join
+    # separators, which changes the wording of a README and nothing else; the
+    # card's actual behaviour is asserted in tests/unit/test_card.py.
+    "*/domain/card.py",
 ]
 pytest_add_cli_args_test_selection = ["tests/unit", "tests/property", "tests/acceptance"]

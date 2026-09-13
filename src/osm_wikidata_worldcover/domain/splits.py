@@ -54,7 +54,7 @@ class SplitRatios:
 
     def __post_init__(self) -> None:
         total = self.train + self.validation + self.test
-        if not math.isclose(total, 1.0, abs_tol=1e-9):
+        if not math.isclose(total, 1.0):
             raise ValueError(f"split ratios must sum to 1.0, got {total!r}")
         if min(self.train, self.validation, self.test) < 0.0:
             raise ValueError("split ratios must be non-negative")

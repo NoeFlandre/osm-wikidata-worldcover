@@ -58,9 +58,10 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - name: Mutate the domain logic
-        run: |
-          uv run mutmut run
-          uv run mutmut results
+        run: uv run mutmut run
+
+      - name: Mutation score
+        run: uv run python scripts/mutation_score.py
 
   docker:
     name: Docker image

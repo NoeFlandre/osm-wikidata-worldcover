@@ -11,3 +11,6 @@ site/
 data/
 !data/.gitkeep
 .DS_Store
+mutants/
+mutmut-stats.json
+coverage.json
