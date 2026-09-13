@@ -20,12 +20,13 @@ __all__ = ["DEFAULT_SOURCE_DATASET", "Config"]
 DEFAULT_SOURCE_DATASET = "NoeFlandre/osm-polygon-wikidata-and-wikipedia"
 
 #: Polygons larger than this are refused before any raster is read.
-#: At 100,000 km2 a polygon already spans several 3-degree tiles; the largest
-#: in the source is 10.2 million km2, which would need ~100 tiles (~10 GB) and
-#: 10^11 pixels for a single row. Such polygons are countries and continents,
-#: whose articles describe history and governance rather than the ground.
-#: This excludes 238 of 1,259,424 polygons (0.019%).
-DEFAULT_MAX_POLYGON_AREA_M2 = 1e11
+#: Zonal-statistics cost is linear in area: 10,000 km2 is ~10^8 pixels and
+#: about 1.4 s, while the largest polygon in the source -- 10.2 million km2 --
+#: would need ~100 tiles and 10^11 pixels for a single row. Capping here bounds
+#: the worst case to roughly a second and costs 1,099 of 1,259,424 polygons
+#: (0.087%), which are provinces, countries and continents whose articles
+#: describe history and governance rather than the ground beneath them.
+DEFAULT_MAX_POLYGON_AREA_M2 = 1e10
 
 #: Equal-area projection used whenever a real-world area is needed.
 EQUAL_AREA_CRS = "EPSG:6933"

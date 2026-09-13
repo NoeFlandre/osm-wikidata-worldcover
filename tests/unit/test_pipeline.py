@@ -222,23 +222,23 @@ class TestPolygonSizeCap:
     """
 
     def test_a_polygon_above_the_cap_is_refused(self, half_and_half) -> None:
-        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e11]))
+        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e10]))
         outcome = RegionOutcome("r")
         tiles = FixedTiles(half_and_half)
-        labelled = label_polygons(frame, tiles, 0.8, outcome, max_area_m2=1e11)
+        labelled = label_polygons(frame, tiles, 0.8, outcome, max_area_m2=1e10)
         assert len(labelled) == 0
         assert outcome.rejections["too_large"] == 1
 
     def test_an_oversized_polygon_costs_no_tile_download(self, half_and_half) -> None:
-        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e11]))
+        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e10]))
         tiles = FixedTiles(half_and_half)
-        label_polygons(frame, tiles, 0.8, RegionOutcome("r"), max_area_m2=1e11)
+        label_polygons(frame, tiles, 0.8, RegionOutcome("r"), max_area_m2=1e10)
         assert tiles.ensured == []
 
     def test_a_polygon_exactly_at_the_cap_is_kept(self, half_and_half) -> None:
-        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[1e11]))
+        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[1e10]))
         labelled = label_polygons(
-            frame, FixedTiles(half_and_half), 0.8, RegionOutcome("r"), max_area_m2=1e11
+            frame, FixedTiles(half_and_half), 0.8, RegionOutcome("r"), max_area_m2=1e10
         )
         assert len(labelled) == 1
 
@@ -253,12 +253,12 @@ class TestPolygonSizeCap:
         tables = tables_for()
         tables = RegionTables(
             stem="r",
-            polygons=polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e11]),
+            polygons=polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e10]),
             links=tables.links,
             documents=tables.documents,
         )
         examples, outcome = run_region(
-            Config(max_polygon_area_m2=1e11), tables, FixedTiles(half_and_half)
+            Config(max_polygon_area_m2=1e10), tables, FixedTiles(half_and_half)
         )
         assert len(examples) == 0
         assert outcome.rejections["too_large"] == 1

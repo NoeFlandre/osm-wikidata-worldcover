@@ -18,18 +18,20 @@ Measured cost is mild up to a point and then dominated by tile count:
 | 1,000 km² | 10⁷ | 0.17 s |
 | 10,000 km² | 10⁸ | 1.38 s |
 
-Above ~100,000 km² a polygon no longer fits in a few tiles, and the download —
-not the arithmetic — becomes the cost.
+Cost is linear in area, and a first attempt at a 100,000 km² cap was still too
+generous: the run went CPU-bound on Algeria's provinces at ~14 s per polygon
+while the network sat idle at 5% of its capacity.
 
 ## Decision
 
-Refuse polygons whose source `area_m2` exceeds **10¹¹ m² (100,000 km²)**,
+Refuse polygons whose source `area_m2` exceeds **10¹⁰ m² (10,000 km²)**,
 screened *before* any tile is fetched. Configurable via `--max-area-km2`;
 `None` disables it.
 
 ## Consequences
 
-- Excludes **238 of 1,259,424** polygons — 0.019%.
+- Excludes **1,099 of 1,259,424** polygons — 0.087%.
+- Bounds the worst-case polygon to ~10⁸ pixels, about 1.4 s.
 - Bounds per-polygon cost to a handful of tiles, removing the stall.
 - Rejections are counted as `too_large` and reported in the manifest, so the
   exclusion is visible rather than silent.

@@ -1,5 +1,7 @@
 """Dataset-level invariants checked before anything is published."""
 
+import pytest
+
 from osm_wikidata_worldcover.domain.validation import Check, validate
 
 
@@ -101,3 +103,24 @@ def test_violations_are_ordered_deterministically() -> None:
     first = [v.check for v in validate(rows).violations]
     second = [v.check for v in validate(rows).violations]
     assert first == second
+
+
+def test_only_a_handful_of_examples_are_reported_per_check() -> None:
+    """The report samples offenders; it must not grow with the dataset."""
+    rows = [row(polygon_id=f"p{i}", document_id=f"d{i}", text="tiny") for i in range(20)]
+    violation = next(v for v in validate(rows).violations if v.check is Check.UNUSABLE_TEXT)
+    assert violation.count == 20
+    assert len(violation.examples) == 5
+
+
+def test_reported_examples_name_the_offending_polygons() -> None:
+    rows = [row(polygon_id="culprit", text="tiny")]
+    violation = next(v for v in validate(rows).violations if v.check is Check.UNUSABLE_TEXT)
+    assert violation.examples == ("culprit",)
+
+
+def test_an_inverted_bbox_error_names_the_problem() -> None:
+    from osm_wikidata_worldcover.domain.tiling import tiles_for_bbox
+
+    with pytest.raises(ValueError, match="inverted bbox"):
+        tiles_for_bbox((9.0, 48.0, 6.0, 51.0))

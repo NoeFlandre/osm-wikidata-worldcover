@@ -34,6 +34,18 @@ compounded by WorldCover collapsing all settlement into one class (ADR 0001).
 macro-averages rather than accuracy. Adding CORINE as a second label column
 would restore the urban distinctions; see ADR 0001.
 
+## Very large polygons are excluded
+
+Polygons above 10,000 km² are refused (ADR 0005) — 1,099 rows, 0.087%.
+
+*Why it exists:* zonal-statistics cost is linear in area, and without a cap a
+single continent-scale polygon needs ~100 tiles and hours of computation.
+
+*Cleanup path:* read those polygons from the rasters' overview pyramids
+instead of at full resolution. `exactextract` does not expose overview
+selection, so this needs a second, decimated code path — worth it only if
+those 1,099 rows are wanted.
+
 ## Split boundaries are cell edges, not buffers
 
 H3 blocking guarantees that everything *within* a cell shares a split, but two

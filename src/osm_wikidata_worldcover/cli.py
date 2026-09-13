@@ -26,7 +26,7 @@ def build(
     threshold: Annotated[float, typer.Option(help="Minimum dominant-class share.")] = 0.8,
     max_area_km2: Annotated[
         float, typer.Option(help="Refuse polygons larger than this, in km2.")
-    ] = 100_000.0,
+    ] = 10_000.0,
     revision: Annotated[
         str | None, typer.Option(help="Pin the source dataset to this commit.")
     ] = None,

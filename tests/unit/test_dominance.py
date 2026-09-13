@@ -3,6 +3,7 @@
 import pytest
 
 from osm_wikidata_worldcover.domain.dominance import (
+    COVERAGE_TOLERANCE,
     DEFAULT_THRESHOLD,
     OverlappingCoverageError,
     RejectionReason,
@@ -107,3 +108,53 @@ def test_small_float_overshoot_is_tolerated_not_raised() -> None:
 def test_class_fractions_also_guards_overlapping_coverage() -> None:
     with pytest.raises(OverlappingCoverageError):
         class_fractions({10: 60.0, 50: 60.0}, polygon_area=100.0)
+
+
+class TestRejectedOutcomesAreHonest:
+    """A refused polygon must not report a confident-looking fraction.
+
+    Mutation testing found these fields unasserted: an outcome could claim
+    ``fraction=1.0`` while being rejected and no test noticed.
+    """
+
+    def test_empty_polygon_reports_no_fraction(self) -> None:
+        outcome = decide({10: 10.0}, polygon_area=0.0, threshold=0.8)
+        assert outcome.accepted is False
+        assert outcome.code is None
+        assert outcome.fraction == 0.0
+
+    def test_no_valid_class_reports_no_fraction(self) -> None:
+        outcome = decide({0: 100.0}, polygon_area=100.0, threshold=0.8)
+        assert outcome.accepted is False
+        assert outcome.fraction == 0.0
+
+    def test_acceptance_is_a_real_boolean(self) -> None:
+        assert decide({10: 100.0}, polygon_area=100.0, threshold=0.8).accepted is True
+
+
+class TestClassFractionsBoundaries:
+    def test_zero_area_yields_no_fractions_rather_than_dividing(self) -> None:
+        assert class_fractions({10: 5.0}, polygon_area=0.0) == {}
+
+    def test_negative_area_yields_no_fractions(self) -> None:
+        assert class_fractions({10: 5.0}, polygon_area=-1.0) == {}
+
+    def test_coverage_exactly_at_the_tolerance_is_allowed(self) -> None:
+        # Exactly at the limit is float noise, not double counting.
+        total = 100.0 * (1.0 + COVERAGE_TOLERANCE)
+        assert class_fractions({10: total}, polygon_area=100.0) == {10: pytest.approx(1.0)}
+
+    def test_coverage_just_past_the_tolerance_raises(self) -> None:
+        total = 100.0 * (1.0 + COVERAGE_TOLERANCE) * 1.0001
+        with pytest.raises(OverlappingCoverageError):
+            class_fractions({10: total}, polygon_area=100.0)
+
+
+def test_threshold_error_names_the_problem() -> None:
+    with pytest.raises(ValueError, match="threshold must be in"):
+        decide({10: 1.0}, polygon_area=1.0, threshold=0.0)
+
+
+def test_overlap_error_names_the_problem() -> None:
+    with pytest.raises(OverlappingCoverageError, match="exceeding polygon area"):
+        decide({10: 60.0, 50: 60.0}, polygon_area=100.0, threshold=0.8)
