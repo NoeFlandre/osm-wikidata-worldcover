@@ -10,6 +10,7 @@ from typing import Any, Self
 
 import yaml
 
+from osm_wikidata_worldcover.adapters.worldcover import DEFAULT_CACHED_TILES
 from osm_wikidata_worldcover.domain.dominance import DEFAULT_THRESHOLD
 from osm_wikidata_worldcover.domain.splits import DEFAULT_RATIOS, DEFAULT_RESOLUTION, DEFAULT_SEED
 from osm_wikidata_worldcover.domain.text import DEFAULT_MIN_WORDS
@@ -39,6 +40,7 @@ class Config:
 
     worldcover_version: str = "v200"
     worldcover_year: int = 2021
+    cached_tiles: int = DEFAULT_CACHED_TILES
 
     source_dataset: str = DEFAULT_SOURCE_DATASET
     source_revision: str | None = None

@@ -95,8 +95,24 @@ def label_polygons(
     Oversized polygons are dropped first, before anything is downloaded.
     """
     frame = _within_size_cap(frame, max_area_m2, outcome)
-    if len(frame) == 0:
+    blocks = _label_every_group(frame, tiles, threshold, outcome, keep_tiles)
+    if not blocks:
         return pd.DataFrame()
+    labelled = pd.concat(blocks, ignore_index=True)
+    outcome.polygons_accepted = len(labelled)
+    return labelled
+
+
+def _label_every_group(
+    frame: gpd.GeoDataFrame,
+    tiles: WorldCoverTiles,
+    threshold: float,
+    outcome: RegionOutcome,
+    keep_tiles: bool,
+) -> list[pd.DataFrame]:
+    """Label each group of polygons sharing a tile set."""
+    if len(frame) == 0:
+        return []
     # groupby widens its key to Hashable and its group to DataFrame; both are
     # narrower than that here by construction.
     grouped = cast("gpd.GeoDataFrame", frame.assign(_tiles=tiles_for_frame(frame)))
@@ -111,12 +127,7 @@ def label_polygons(
         )
         for tile_set, group in grouped.groupby("_tiles", sort=True)
     ]
-    kept = [b for b in blocks if b is not None]
-    if not kept:
-        return pd.DataFrame()
-    labelled = pd.concat(kept, ignore_index=True)
-    outcome.polygons_accepted = len(labelled)
-    return labelled
+    return [b for b in blocks if b is not None]
 
 
 def _within_size_cap(

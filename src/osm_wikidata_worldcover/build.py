@@ -96,23 +96,40 @@ def run_build(
         Path(config.cache_dir) / "worldcover",
         version=config.worldcover_version,
         year=config.worldcover_year,
+        max_cached_tiles=config.cached_tiles,
     )
     raw = Path(config.cache_dir) / "source"
 
     shards = ShardStore(Path(config.cache_dir) / "shards")
-    outcomes: list[RegionOutcome] = []
-    for index, stem in enumerate(stems, start=1):
-        # Announced as each region starts, not up front, so a long run shows
-        # where it actually is.
-        progress(_label(index, len(stems), stem, done=shards.has(stem)))
-        if not shards.has(stem):
-            outcomes.append(
-                _process_region(config, revision, stem, raw, tiles, shards, keep_tiles, progress)
-            )
+    outcomes = _run_regions(config, revision, stems, raw, tiles, shards, keep_tiles, progress)
 
     report = BuildReport(result=finalize([], config), regions=outcomes)
     report.result = finalize(shards.read(), config, rejections=report.rejections)
     return report
+
+
+def _run_regions(
+    config: Config,
+    revision: str,
+    stems: Sequence[str],
+    raw: Path,
+    tiles: WorldCoverTiles,
+    shards: ShardStore,
+    keep_tiles: bool,
+    progress: Progress,
+) -> list[RegionOutcome]:
+    """Process each region that has not already finished."""
+    outcomes: list[RegionOutcome] = []
+    for index, stem in enumerate(stems, start=1):
+        done = shards.has(stem)
+        # Announced as each region starts, not up front, so a long run shows
+        # where it actually is.
+        progress(_label(index, len(stems), stem, done=done))
+        if not done:
+            outcomes.append(
+                _process_region(config, revision, stem, raw, tiles, shards, keep_tiles, progress)
+            )
+    return outcomes
 
 
 def _label(index: int, total: int, stem: str, done: bool) -> str:

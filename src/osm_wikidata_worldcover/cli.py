@@ -30,6 +30,10 @@ def build(
     revision: Annotated[
         str | None, typer.Option(help="Pin the source dataset to this commit.")
     ] = None,
+    cached_tiles: Annotated[
+        int,
+        typer.Option(help="Released tiles kept on disk (~94 MB each) to avoid re-downloading."),
+    ] = 8,
     keep_tiles: Annotated[
         bool, typer.Option(help="Keep downloaded tiles instead of discarding them.")
     ] = False,
@@ -41,6 +45,7 @@ def build(
         cache_dir=cache,
         threshold=threshold,
         max_polygon_area_m2=max_area_km2 * 1e6,
+        cached_tiles=cached_tiles,
         source_revision=revision,
         dataset_version=dataset_version,
     )
