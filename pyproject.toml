@@ -79,5 +79,13 @@ source = ["src/osm_wikidata_worldcover"]
 branch = true
 
 [tool.mutmut]
-paths_to_mutate = ["src/osm_wikidata_worldcover/domain/"]
-tests_dir = "tests/unit/"
+# The whole package is copied so imports resolve, but only the logic is
+# mutated: the adapters and CLI are thin shells over other people's I/O, where
+# a surviving mutant says more about the stub than about our tests.
+source_paths = ["src/osm_wikidata_worldcover"]
+do_not_mutate = [
+    "*/adapters/*",
+    "*/cli.py",
+    "*/config.py",
+]
+pytest_add_cli_args_test_selection = ["tests/unit", "tests/property", "tests/acceptance"]

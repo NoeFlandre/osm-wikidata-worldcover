@@ -212,3 +212,53 @@ class TestTileDeduplication:
         assert len(labelled) == 1
         assert labelled["dominant_fraction"].iloc[0] == pytest.approx(1.0)
         assert outcome.rejections == {}
+
+
+class TestPolygonSizeCap:
+    """Continent-scale polygons are refused before any raster is fetched.
+
+    The largest polygon in the source is 10.2 million km2 -- about 10^11 pixels
+    spread over ~100 tiles, roughly 10 GB of download for a single row.
+    """
+
+    def test_a_polygon_above_the_cap_is_refused(self, half_and_half) -> None:
+        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e11]))
+        outcome = RegionOutcome("r")
+        tiles = FixedTiles(half_and_half)
+        labelled = label_polygons(frame, tiles, 0.8, outcome, max_area_m2=1e11)
+        assert len(labelled) == 0
+        assert outcome.rejections["too_large"] == 1
+
+    def test_an_oversized_polygon_costs_no_tile_download(self, half_and_half) -> None:
+        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e11]))
+        tiles = FixedTiles(half_and_half)
+        label_polygons(frame, tiles, 0.8, RegionOutcome("r"), max_area_m2=1e11)
+        assert tiles.ensured == []
+
+    def test_a_polygon_exactly_at_the_cap_is_kept(self, half_and_half) -> None:
+        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[1e11]))
+        labelled = label_polygons(
+            frame, FixedTiles(half_and_half), 0.8, RegionOutcome("r"), max_area_m2=1e11
+        )
+        assert len(labelled) == 1
+
+    def test_no_cap_keeps_everything(self, half_and_half) -> None:
+        frame, _ = prepare_polygons(polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[1e30]))
+        labelled = label_polygons(
+            frame, FixedTiles(half_and_half), 0.8, RegionOutcome("r"), max_area_m2=None
+        )
+        assert len(labelled) == 1
+
+    def test_the_cap_is_applied_by_a_whole_region_run(self, half_and_half) -> None:
+        tables = tables_for()
+        tables = RegionTables(
+            stem="r",
+            polygons=polygons_frame(geometry=[LEFT_GEOJSON], area_m2=[2e11]),
+            links=tables.links,
+            documents=tables.documents,
+        )
+        examples, outcome = run_region(
+            Config(max_polygon_area_m2=1e11), tables, FixedTiles(half_and_half)
+        )
+        assert len(examples) == 0
+        assert outcome.rejections["too_large"] == 1

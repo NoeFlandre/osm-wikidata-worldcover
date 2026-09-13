@@ -24,6 +24,9 @@ def build(
         list[str] | None, typer.Option(help="Region stem to build; repeatable.")
     ] = None,
     threshold: Annotated[float, typer.Option(help="Minimum dominant-class share.")] = 0.8,
+    max_area_km2: Annotated[
+        float, typer.Option(help="Refuse polygons larger than this, in km2.")
+    ] = 100_000.0,
     revision: Annotated[
         str | None, typer.Option(help="Pin the source dataset to this commit.")
     ] = None,
@@ -37,6 +40,7 @@ def build(
         out_dir=out,
         cache_dir=cache,
         threshold=threshold,
+        max_polygon_area_m2=max_area_km2 * 1e6,
         source_revision=revision,
         dataset_version=dataset_version,
     )

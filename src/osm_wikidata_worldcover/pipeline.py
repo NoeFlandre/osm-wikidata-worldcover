@@ -86,12 +86,17 @@ def label_polygons(
     threshold: float,
     outcome: RegionOutcome,
     keep_tiles: bool = False,
+    max_area_m2: float | None = None,
 ) -> pd.DataFrame:
     """Label every polygon in ``frame`` that one class dominates.
 
     Polygons are grouped by the tiles they touch, so each raster is fetched
     once, used for every polygon over it, and released before the next group.
+    Oversized polygons are dropped first, before anything is downloaded.
     """
+    frame = _within_size_cap(frame, max_area_m2, outcome)
+    if len(frame) == 0:
+        return pd.DataFrame()
     # groupby widens its key to Hashable and its group to DataFrame; both are
     # narrower than that here by construction.
     grouped = cast("gpd.GeoDataFrame", frame.assign(_tiles=tiles_for_frame(frame)))
@@ -112,6 +117,23 @@ def label_polygons(
     labelled = pd.concat(kept, ignore_index=True)
     outcome.polygons_accepted = len(labelled)
     return labelled
+
+
+def _within_size_cap(
+    frame: gpd.GeoDataFrame, max_area_m2: float | None, outcome: RegionOutcome
+) -> gpd.GeoDataFrame:
+    """Drop polygons above the cap, counting them.
+
+    Screened on the source's own ``area_m2`` before any tile is fetched, so a
+    continent-scale polygon costs nothing rather than ~10 GB of download.
+    """
+    if max_area_m2 is None:
+        return frame
+    keep = frame["area_m2"].to_numpy() <= max_area_m2
+    rejected = int((~keep).sum())
+    if rejected:
+        outcome.rejections[RejectionReason.TOO_LARGE.value] += rejected
+    return cast("gpd.GeoDataFrame", frame[keep].reset_index(drop=True))
 
 
 def _process_group(
@@ -242,7 +264,14 @@ def run_region(
     outcome.polygons_seen = len(tables.polygons)
     outcome.polygons_invalid = invalid
 
-    labelled = label_polygons(frame, tiles, config.threshold, outcome, keep_tiles)
+    labelled = label_polygons(
+        frame,
+        tiles,
+        config.threshold,
+        outcome,
+        keep_tiles,
+        max_area_m2=config.max_polygon_area_m2,
+    )
     examples = to_examples(labelled, tables, config.min_words)
     examples = _shape(examples)
     outcome.examples = len(examples)

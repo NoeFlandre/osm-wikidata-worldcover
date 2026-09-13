@@ -45,6 +45,7 @@ class RejectionReason(Enum):
     """Why a polygon did not yield a label."""
 
     EMPTY_POLYGON = "empty_polygon"
+    TOO_LARGE = "too_large"
     NO_VALID_CLASS = "no_valid_class"
     BELOW_THRESHOLD = "below_threshold"
 

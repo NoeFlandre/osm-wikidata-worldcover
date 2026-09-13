@@ -15,7 +15,7 @@ the sum over the tiles it touches.
 import math
 import urllib.error
 import urllib.request
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Final
@@ -32,6 +32,10 @@ __all__ = ["DEFAULT_BASE_URL", "TileNotPublishedError", "WorldCoverTiles", "clas
 
 DEFAULT_BASE_URL: Final[str] = "https://esa-worldcover.s3.eu-central-1.amazonaws.com"
 
+#: Released tiles kept on disk against a neighbouring group wanting them again.
+#: Eight tiles is roughly 750 MB, a good trade against a 94 MB re-download.
+DEFAULT_CACHED_TILES: Final[int] = 8
+
 #: exactextract operations: the distinct values, their share of the observed
 #: area, and the observed area itself in (fractional) cells.
 _OPS: Final[Sequence[str]] = ("unique", "frac", "count")
@@ -44,8 +48,14 @@ class TileNotPublishedError(FileNotFoundError):
 class WorldCoverTiles:
     """Addresses, downloads and caches WorldCover tiles.
 
-    Tiles are ~94 MB each and a global run touches thousands of them, so the
-    cache is meant to be transient: fetch a tile, use it, then ``discard`` it.
+    Tiles are ~94 MB each and a global run touches thousands of them, so they
+    cannot all be kept. They also cannot be deleted the moment one group of
+    polygons is done, because neighbouring groups usually want the same tile
+    and re-downloading 94 MB is pure waste.
+
+    ``discard`` therefore *releases* a tile rather than deleting it, and the
+    least recently used tiles are evicted once more than ``max_cached_tiles``
+    are held. A released tile that is asked for again is simply reused.
     """
 
     def __init__(
@@ -54,11 +64,16 @@ class WorldCoverTiles:
         version: str = "v200",
         year: int = 2021,
         base_url: str = DEFAULT_BASE_URL,
+        max_cached_tiles: int = DEFAULT_CACHED_TILES,
     ) -> None:
         self.cache_dir = Path(cache_dir)
         self.version = version
         self.year = year
         self.base_url = base_url.rstrip("/")
+        self.max_cached_tiles = max_cached_tiles
+        # Insertion-ordered: the oldest released tile is evicted first.
+        self._released: OrderedDict[str, Tile] = OrderedDict()
+        self._in_use: set[str] = set()
 
     def filename_for(self, tile: Tile) -> str:
         """The product's own filename for ``tile``."""
@@ -77,6 +92,8 @@ class WorldCoverTiles:
 
         Raises :class:`TileNotPublishedError` for tiles the product omits.
         """
+        self._in_use.add(tile.name)
+        self._released.pop(tile.name, None)
         path = self.path_for(tile)
         if path.exists() and path.stat().st_size > 0:
             return path
@@ -95,8 +112,17 @@ class WorldCoverTiles:
         return path
 
     def discard(self, tile: Tile) -> None:
-        """Delete the cached copy of ``tile``, if any."""
-        self.path_for(tile).unlink(missing_ok=True)
+        """Release ``tile``, deleting it only once the cache is over capacity."""
+        self._in_use.discard(tile.name)
+        self._released[tile.name] = tile
+        self._released.move_to_end(tile.name)
+        self._evict()
+
+    def _evict(self) -> None:
+        """Delete released tiles, oldest first, until the cache fits."""
+        while len(self._released) > self.max_cached_tiles:
+            _, evicted = self._released.popitem(last=False)
+            self.path_for(evicted).unlink(missing_ok=True)
 
 
 def class_coverage(raster_paths: Iterable[Path], frame: gpd.GeoDataFrame) -> list[dict[int, float]]:

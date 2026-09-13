@@ -1,0 +1,10 @@
+.git
+.venv
+data
+site
+mutants
+htmlcov
+.pytest_cache
+.ruff_cache
+.hypothesis
+**/__pycache__

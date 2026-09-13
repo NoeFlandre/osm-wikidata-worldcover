@@ -1,0 +1,82 @@
+# Technical debt and known weaknesses
+
+Recorded deliberately, with why each exists and how it would be cleaned up.
+
+## The label describes the place, not the feature
+
+A 10 m pixel is 100 m². Polygons below that — 7.6% of the source — are smaller
+than a single pixel, and their label is effectively "whatever covers the ground
+here". Even at the median (1,301 m², ~13 pixels) a church is labelled
+`Built-up` because its surroundings are, not because the building was
+classified as such.
+
+*Why it exists:* inherent to raster land cover at any resolution the source
+publishes. **Not** fixable with better data.
+
+*Mitigation in place:* every row carries `polygon_area_m2` and
+`observed_fraction`, and the manifest reports the `dominant_fraction`
+distribution, so a consumer can filter to polygons where dominance was a real
+test.
+
+*Cleanup path:* publish a recommended `polygon_area_m2 >= 2500` subset (25+
+pixels) as a named config alongside the full dataset.
+
+## Built-up dominates the class distribution
+
+Wikipedia-linked polygons are overwhelmingly buildings and settlements, so
+`Built-up` swamps the other ten classes. On the Luxembourg smoke build it was
+80.5% of rows.
+
+*Why it exists:* a property of what people write encyclopaedia articles about,
+compounded by WorldCover collapsing all settlement into one class (ADR 0001).
+
+*Cleanup path:* ship a class-balanced subset, or report per-class metrics and
+macro-averages rather than accuracy. Adding CORINE as a second label column
+would restore the urban distinctions; see ADR 0001.
+
+## Split boundaries are cell edges, not buffers
+
+H3 blocking guarantees that everything *within* a cell shares a split, but two
+polygons a metre apart on opposite sides of a cell edge can still be separated
+(ADR 0003).
+
+*Why it exists:* true buffered blocking means discarding a margin around every
+boundary, which costs data and complicates reproducibility.
+
+*Cleanup path:* drop examples within a fixed distance of a cell boundary, or
+group cells into buffered super-cells. Quantify the affected share first — it
+is a perimeter effect and may not be worth the loss.
+
+## Invalid geometries are dropped, not repaired
+
+`domain/geometry.py` refuses self-intersecting polygons rather than running
+`make_valid`.
+
+*Why it exists:* repair alters the very shape whose area fraction becomes the
+label. A smaller trustworthy dataset was preferred to a larger one resting on
+geometries the source never asserted.
+
+*Cleanup path:* if the discarded share proves material, repair *and* record a
+`geometry_repaired` flag so consumers can exclude those rows.
+
+## Split ratios are approximate
+
+80/10/10 applies to H3 cells, not rows. Realised row counts drift — the
+Luxembourg smoke build came out 76/10/14 because a small country spans few
+cells.
+
+*Why it exists:* the alternative is packing cells to hit row targets, which
+makes assignment depend on the whole dataset instead of on the cell id alone,
+costing reproducibility.
+
+*Cleanup path:* accept it, and report realised counts in the manifest — which
+it does.
+
+## Only the first document language is normalised
+
+`language` is taken from the document, falling back to the link table. No
+attempt is made to reconcile disagreements between the two.
+
+*Why it exists:* they disagree rarely, and the document is authoritative.
+
+*Cleanup path:* count the disagreements; if non-trivial, record both.

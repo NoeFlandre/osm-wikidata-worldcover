@@ -80,9 +80,10 @@ def test_a_failed_download_leaves_no_partial_file(tmp_path, monkeypatch) -> None
     assert list(tmp_path.iterdir()) == []
 
 
-def test_discard_removes_a_cached_tile(tmp_path, monkeypatch) -> None:
+def test_discard_releases_a_tile_for_eviction(tmp_path, monkeypatch) -> None:
+    """Discard releases rather than deletes; see test_tile_cache for eviction."""
     monkeypatch.setattr(wc.urllib.request, "urlretrieve", fake_retrieve())
-    tiles = WorldCoverTiles(tmp_path)
+    tiles = WorldCoverTiles(tmp_path, max_cached_tiles=0)
     tiles.ensure(TILE)
     tiles.discard(TILE)
     assert not tiles.path_for(TILE).exists()
