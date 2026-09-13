@@ -1,5 +1,7 @@
 """Polygon validity screening."""
 
+import warnings
+
 import pytest
 from shapely import wkt
 from shapely.geometry import GeometryCollection, LineString, Point, Polygon
@@ -37,7 +39,12 @@ def test_zero_area_polygon_is_not_usable() -> None:
 
 
 def test_non_finite_coordinates_are_not_usable() -> None:
-    assert not is_usable_polygon(Polygon([(0, 0), (0, 1), (float("nan"), 1), (1, 0)]))
+    # Building the NaN polygon is itself what warns, on some platforms, and
+    # that is shapely's construction rather than the code under test.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        nan_polygon = Polygon([(0, 0), (0, 1), (float("nan"), 1), (1, 0)])
+    assert not is_usable_polygon(nan_polygon)
 
 
 def test_multipolygon_is_usable() -> None:
