@@ -14,6 +14,10 @@ MANIFEST = {
         {"code": 10, "label": "Tree cover", "examples": 600, "share": 0.6},
         {"code": 50, "label": "Built-up", "examples": 400, "share": 0.4},
     ],
+    "example_polygons": [
+        {"name": "A | B", "worldcover_label": "Tree cover"},
+        {"name": "Lake Azul", "worldcover_label": "Permanent water bodies"},
+    ],
     "language_distribution": [
         {"language": "en", "examples": 700, "share": 0.7},
         {"language": "fr", "examples": 300, "share": 0.3},
@@ -63,6 +67,13 @@ def test_card_embeds_the_centroid_coverage_map() -> None:
     assert "worldcover_centroids.png" in text
     assert "500 distinct polygons" in text
     assert "polygon centroid" in text
+
+
+def test_card_shows_named_examples_with_their_esa_classes() -> None:
+    text = card()
+    assert "Example labelled polygons" in text
+    assert "A \\| B" in text
+    assert "Permanent water bodies" in text
 
 
 def test_card_lists_every_class_with_its_share() -> None:

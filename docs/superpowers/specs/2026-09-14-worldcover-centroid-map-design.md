@@ -29,8 +29,12 @@ before publication. The generator will:
 
 The card renderer will add a coverage-map section after the introduction. It
 will link to `worldcover_centroids.png`, state the unique-polygon count, and
-explain the centroid representation. The existing `lat`, `lon`, and
-`centroid_wkt` columns remain documented as the queryable location fields.
+explain the centroid representation. It will also show one deterministic named
+polygon for each ESA class represented in the release, with the polygon name
+and associated WorldCover class in a compact table. The examples are stored in
+the manifest so the card remains a pure function of the release metadata. The
+existing `lat`, `lon`, and `centroid_wkt` columns remain documented as the
+queryable location fields.
 
 ## Dataset Viewer compatibility
 
@@ -50,9 +54,10 @@ Any Viewer failure is a release failure even if the Hub upload itself succeeds.
 ## Testing
 
 Unit tests will cover centroid aggregation and validation, deterministic class
-colors/legend inputs, map-card rendering, and publisher integration. Tests will
-use small local Parquet fixtures and a patched local boundary source so they do
-not depend on the network or the full release.
+colors/legend inputs, representative-card examples, map-card rendering, and
+publisher integration. Tests will use small local Parquet fixtures and a
+patched local boundary source so they do not depend on the network or the full
+release.
 
 The release verification will additionally inspect the generated PNG and run
 the public Dataset Viewer checks against the uploaded repository.

@@ -40,6 +40,14 @@ def test_class_distribution_is_labelled_and_ordered_by_code(counts) -> None:
     assert classes[0]["share"] == pytest.approx(0.6)
 
 
+def test_manifest_carries_named_polygon_examples(counts) -> None:
+    counts.example_polygons = [{"name": "Forest", "worldcover_label": "Tree cover"}]
+
+    examples = build(counts, settings={})["example_polygons"]
+
+    assert examples == [{"name": "Forest", "worldcover_label": "Tree cover"}]
+
+
 def test_language_distribution_is_ordered_by_count_then_name(counts) -> None:
     # "fr" is inserted before "de" but must come after it, so the tie-break is
     # really on the name rather than on insertion order.
@@ -105,6 +113,7 @@ def test_manifest_keys_are_the_published_contract(counts) -> None:
     assert set(manifest) == {
         "counts",
         "class_distribution",
+        "example_polygons",
         "language_distribution",
         "dominant_fraction",
         "geographic_coverage",

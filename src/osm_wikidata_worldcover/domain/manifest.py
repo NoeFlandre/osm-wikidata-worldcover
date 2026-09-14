@@ -1,9 +1,9 @@
 """Assemble the dataset manifest.
 
 The manifest is the dataset's self-description: what it contains, how it was
-filtered, and which inputs produced it. It is built from aggregates rather than
-rows so the shape stays pure and cheap, and its key and element order is fixed
-so two builds of the same data serialise byte-identically.
+filtered, and which inputs produced it. It is built from aggregates plus a
+small deterministic set of representative named polygons, and its key and
+element order is fixed so two builds of the same data serialise byte-identically.
 """
 
 from collections.abc import Mapping
@@ -39,6 +39,7 @@ class DatasetCounts:
     coverage: GeographicCoverage
     rejections: dict[str, int] = field(default_factory=dict)
     deduplication: dict[str, int] = field(default_factory=dict)
+    example_polygons: list[dict[str, str]] = field(default_factory=list)
 
 
 def build(counts: DatasetCounts, settings: Mapping[str, Any]) -> dict[str, Any]:
@@ -66,6 +67,7 @@ def build(counts: DatasetCounts, settings: Mapping[str, Any]) -> dict[str, Any]:
                 counts.language_distribution.items(), key=lambda kv: (-kv[1], kv[0])
             )
         ],
+        "example_polygons": [dict(row) for row in counts.example_polygons],
         "dominant_fraction": dict(sorted(counts.dominant_fraction_quantiles.items())),
         "geographic_coverage": {
             "h3_cells": counts.coverage.h3_cells,

@@ -16,6 +16,7 @@ MANIFEST = {
         "documents": {"train": 1, "validation": 0, "test": 0, "total": 1},
     },
     "class_distribution": [{"code": 10, "label": "Tree cover", "examples": 1, "share": 1.0}],
+    "example_polygons": [{"name": "Test polygon", "worldcover_label": "Tree cover"}],
     "language_distribution": [{"language": "en", "examples": 1, "share": 1.0}],
     "settings": {"dominance_threshold": 0.8},
 }
@@ -75,6 +76,7 @@ def test_publish_writes_a_card_and_uploads_every_file(build, monkeypatch) -> Non
     assert uploaded["repo_type"] == "dataset"
     assert (build / "README.md").exists()
     assert "Tree cover" in (build / "README.md").read_text()
+    assert "Test polygon" in (build / "README.md").read_text()
     assert generated == {"build": build, "output": build / MAP_FILENAME}
     assert (build / MAP_FILENAME).read_bytes().startswith(b"\x89PNG")
     assert MAP_FILENAME in (build / "README.md").read_text()

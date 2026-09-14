@@ -119,6 +119,16 @@ def test_manifest_counts_match_the_rows(shards, tmp_path) -> None:
     assert result.manifest["counts"]["examples"]["total"] == result.rows
 
 
+def test_manifest_includes_a_named_polygon_example(shards, tmp_path) -> None:
+    shard(shards / "a.parquet", n=3)
+
+    result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
+
+    assert result.manifest["example_polygons"] == [
+        {"name": "N", "worldcover_label": "Tree cover"}
+    ]
+
+
 def test_provenance_is_attached(shards, tmp_path) -> None:
     shard(shards / "a.parquet", n=1)
     result = finalize_shards(

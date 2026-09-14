@@ -266,6 +266,7 @@ def _aggregate(
         documents=_by_split(connection, "count(DISTINCT document_id)"),
         class_distribution=_tally(connection, "worldcover_code", int),
         language_distribution=_tally(connection, "language", str),
+        example_polygons=_example_polygons(connection),
         dominant_fraction_quantiles={
             "p50": round(float(quantiles[0]), 6),
             "p90": round(float(quantiles[1]), 6),
@@ -279,6 +280,30 @@ def _aggregate(
         rejections=dict(sorted(rejections.items())),
         deduplication=dict(sorted(dropped.items())),
     )
+
+
+def _example_polygons(connection: Any) -> list[dict[str, str]]:
+    """Choose one stable named polygon for every represented ESA class.
+
+    Small compatibility fixtures and older intermediate shards may omit the
+    optional OSM name column; those builds simply have no card examples.
+    """
+    columns = {str(row[0]) for row in connection.execute("DESCRIBE kept").fetchall()}
+    if "name" not in columns:
+        return []
+    rows = connection.execute(
+        """
+        SELECT trim(name), worldcover_label
+        FROM kept
+        WHERE name IS NOT NULL AND length(trim(name)) > 0
+        QUALIFY row_number() OVER (
+            PARTITION BY worldcover_code
+            ORDER BY lower(trim(name)), polygon_id, document_id
+        ) = 1
+        ORDER BY worldcover_code
+        """
+    ).fetchall()
+    return [{"name": str(name), "worldcover_label": str(label)} for name, label in rows]
 
 
 def _by_split(connection: Any, expression: str) -> dict[str, int]:

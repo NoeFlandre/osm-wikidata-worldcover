@@ -4,7 +4,7 @@
 
 **Goal:** Publish a deterministic centroid map of all ESA-labelled polygons in the release and keep the Hugging Face Dataset Viewer healthy for all three splits.
 
-**Architecture:** Add a small adapter that aggregates the exact release Parquets with DuckDB, validates one stable ESA label and finite centroid per polygon, and renders a headless Matplotlib PNG over a Natural Earth land outline. Generate that asset inside `publish_dataset`, render a card section linking to it, upload the unchanged tabular files plus the PNG, and verify the public Dataset Viewer API after upload.
+**Architecture:** Add a small adapter that aggregates the exact release Parquets with DuckDB, validates one stable ESA label and finite centroid per polygon, and renders a headless Matplotlib PNG over a Natural Earth land outline. The finalization manifest also stores one deterministic named polygon per represented ESA class for the card's examples table. Generate that asset inside `publish_dataset`, render the card sections linking to it and showing the examples, upload the unchanged tabular files plus the PNG, and verify the public Dataset Viewer API after upload.
 
 **Tech Stack:** Python 3.12, DuckDB, PyArrow/Parquet, GeoPandas, Matplotlib Agg, pytest, Ruff, `ty`, Hugging Face Hub CLI/API, Dataset Viewer HTTP API.
 
@@ -14,11 +14,14 @@
 
 - Create `src/osm_wikidata_worldcover/adapters/coverage_map.py`: release-Parquet centroid aggregation, validation, Natural Earth loading, and PNG rendering.
 - Modify `src/osm_wikidata_worldcover/domain/card.py`: add the static map section and explain that points are centroids, not polygon outlines.
+- Modify `src/osm_wikidata_worldcover/domain/card.py`: add the static map section and the representative polygon/class examples table.
+- Modify `src/osm_wikidata_worldcover/domain/manifest.py` and `src/osm_wikidata_worldcover/finalize.py`: record deterministic named examples from the exact kept rows.
 - Modify `src/osm_wikidata_worldcover/adapters/publish.py`: generate `worldcover_centroids.png` before regenerating the README and uploading the build folder.
 - Modify `src/osm_wikidata_worldcover/adapters/writer.py`: emit Viewer-safe Parquet row groups with page indexes for future builds.
 - Modify `pyproject.toml` and `uv.lock`: add Matplotlib as the runtime renderer dependency.
 - Create `tests/unit/test_coverage_map.py`: local Parquet aggregation, validation, deterministic palette, and isolated PNG rendering tests.
 - Modify `tests/unit/test_card.py`: assert the map link and centroid wording.
+- Modify `tests/unit/test_card.py`, `tests/unit/test_manifest.py`, and `tests/unit/test_finalize_streaming.py`: assert the example names/classes are carried into the card manifest.
 - Modify `tests/unit/test_publish.py`: assert map generation is part of publication without making unit tests download Natural Earth.
 - Modify `tests/unit/test_writer.py`: assert large input batches are split into bounded row groups.
 - Create `docs/superpowers/specs/2026-09-14-worldcover-centroid-map-design.md`: approved design record (already committed).

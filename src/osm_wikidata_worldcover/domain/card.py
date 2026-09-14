@@ -45,6 +45,7 @@ def render(manifest: Mapping[str, Any]) -> str:
             _HEADER,
             _intro(counts, threshold_pct),
             _coverage_map(counts),
+            _example_polygons(manifest.get("example_polygons", [])),
             _caveat(),
             _splits(counts),
             _table(
@@ -129,6 +130,29 @@ in this release and carrying an ESA WorldCover label. Each point is colored by
 its WorldCover class. Points are centroids, not polygon boundaries; use
 `lat`, `lon`, and `centroid_wkt` for the tabular locations.
 """
+
+
+def _example_polygons(examples: Sequence[Mapping[str, Any]]) -> str:
+    """Show deterministic named examples and their ESA labels."""
+    if not examples:
+        return ""
+    rows = [
+        (
+            _markdown_cell(example["name"]),
+            _markdown_cell(example["worldcover_label"]),
+        )
+        for example in examples
+    ]
+    return (
+        _table("Example labelled polygons", ("polygon name", "ESA WorldCover class"), rows)
+        + "\nOne deterministic named polygon is shown for each ESA WorldCover class "
+        "represented in this release.\n"
+    )
+
+
+def _markdown_cell(value: Any) -> str:
+    """Keep generated table cells valid when source names contain Markdown syntax."""
+    return str(value).replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
 
 
 def _splits(counts: Mapping[str, Any]) -> str:
