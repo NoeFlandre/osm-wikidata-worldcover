@@ -58,6 +58,13 @@ def test_card_reports_the_totals() -> None:
     assert "1,000" in card()
 
 
+def test_card_embeds_the_centroid_coverage_map() -> None:
+    text = card()
+    assert "worldcover_centroids.png" in text
+    assert "500 distinct polygons" in text
+    assert "polygon centroid" in text
+
+
 def test_card_lists_every_class_with_its_share() -> None:
     text = card()
     assert "Tree cover" in text

@@ -44,6 +44,7 @@ def render(manifest: Mapping[str, Any]) -> str:
         [
             _HEADER,
             _intro(counts, threshold_pct),
+            _coverage_map(counts),
             _caveat(),
             _splits(counts),
             _table(
@@ -113,6 +114,20 @@ classified. Treat this as place-context classification.
 Each row carries `polygon_area_m2` and `observed_fraction` so you can restrict
 to polygons large enough for the dominance test to have been a real filter
 (`polygon_area_m2 >= 2500` is 25+ pixels).
+"""
+
+
+def _coverage_map(counts: Mapping[str, Any]) -> str:
+    polygons = counts["polygons"]["total"]
+    return f"""
+## Geographic coverage map
+
+![World map of ESA-labelled polygon centroids](worldcover_centroids.png)
+
+The map shows the centroids of all **{polygons:,} distinct polygons** represented
+in this release and carrying an ESA WorldCover label. Each point is colored by
+its WorldCover class. Points are centroids, not polygon boundaries; use
+`lat`, `lon`, and `centroid_wkt` for the tabular locations.
 """
 
 

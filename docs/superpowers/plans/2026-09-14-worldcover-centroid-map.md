@@ -15,10 +15,12 @@
 - Create `src/osm_wikidata_worldcover/adapters/coverage_map.py`: release-Parquet centroid aggregation, validation, Natural Earth loading, and PNG rendering.
 - Modify `src/osm_wikidata_worldcover/domain/card.py`: add the static map section and explain that points are centroids, not polygon outlines.
 - Modify `src/osm_wikidata_worldcover/adapters/publish.py`: generate `worldcover_centroids.png` before regenerating the README and uploading the build folder.
+- Modify `src/osm_wikidata_worldcover/adapters/writer.py`: emit Viewer-safe Parquet row groups with page indexes for future builds.
 - Modify `pyproject.toml` and `uv.lock`: add Matplotlib as the runtime renderer dependency.
 - Create `tests/unit/test_coverage_map.py`: local Parquet aggregation, validation, deterministic palette, and isolated PNG rendering tests.
 - Modify `tests/unit/test_card.py`: assert the map link and centroid wording.
 - Modify `tests/unit/test_publish.py`: assert map generation is part of publication without making unit tests download Natural Earth.
+- Modify `tests/unit/test_writer.py`: assert large input batches are split into bounded row groups.
 - Create `docs/superpowers/specs/2026-09-14-worldcover-centroid-map-design.md`: approved design record (already committed).
 - Create `docs/superpowers/plans/2026-09-14-worldcover-centroid-map.md`: this implementation plan.
 
@@ -199,6 +201,15 @@ TMPDIR="$PWD/data/scratch/map-checks" UV_CACHE_DIR="$PWD/data/cache/uv" UV_LINK_
 
 Expected: both commands exit successfully.
 
+- [ ] **Step 5: Make future release Parquets scanable by the Dataset Viewer.**
+
+Keep `write_batches()` streaming, but pass a fixed `PARQUET_ROW_GROUP_SIZE =
+25_000` to `ParquetWriter.write_batch()` and enable `write_page_index=True`.
+Add a writer regression test that feeds one batch with `25_001` rows and asserts
+there are two row groups, each no larger than the constant. This prevents a
+single large Arrow batch from producing a Parquet file that exceeds the
+Dataset Viewer's scan-size limit.
+
 ## Task 3: Add the card section and publisher integration
 
 **Files:**
@@ -334,6 +345,15 @@ HF_TOKEN="$(< /Users/noeflandre/.cache/huggingface/token)" HF_HOME="$PWD/data/ca
 
 Expected: `README.md`, `worldcover_centroids.png`, `manifest.json`, and the
 three Parquets are present; no split or schema file has been added.
+
+- [ ] **Step 4: Rewrite any release file that hits the Viewer scan limit.**
+
+If Viewer processing reports `TooBigContentError`, stream each affected
+release Parquet through `ParquetFile.iter_batches(batch_size=25_000)` into a
+temporary file using the same compression, page-index, and row-group settings
+as `write_batches()`. Verify row counts and the row-group cap before atomically
+replacing the exact release file, then re-run `/first-rows` and `/rows` for
+every split before considering publication complete.
 
 ## Task 5: Verify the public Dataset Viewer and final quality gates
 

@@ -18,9 +18,16 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-__all__ = ["MANIFEST_NAME", "read_manifest", "write_batches", "write_manifest"]
+__all__ = [
+    "MANIFEST_NAME",
+    "PARQUET_ROW_GROUP_SIZE",
+    "read_manifest",
+    "write_batches",
+    "write_manifest",
+]
 
 MANIFEST_NAME = "manifest.json"
+PARQUET_ROW_GROUP_SIZE = 25_000
 
 
 def read_manifest(build_dir: Path) -> dict:
@@ -39,9 +46,15 @@ def write_batches(reader: pa.RecordBatchReader, path: Path) -> int:
     schema, because a consumer expecting three splits should find three.
     """
     rows = 0
-    with pq.ParquetWriter(path, reader.schema, compression="zstd", store_schema=False) as writer:
+    with pq.ParquetWriter(
+        path,
+        reader.schema,
+        compression="zstd",
+        store_schema=False,
+        write_page_index=True,
+    ) as writer:
         for batch in reader:
-            writer.write_batch(batch)
+            writer.write_batch(batch, row_group_size=PARQUET_ROW_GROUP_SIZE)
             rows += batch.num_rows
     return rows
 

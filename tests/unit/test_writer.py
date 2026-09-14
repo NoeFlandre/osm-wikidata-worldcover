@@ -7,10 +7,15 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from osm_wikidata_worldcover.adapters.writer import read_manifest, write_batches, write_manifest
+from osm_wikidata_worldcover.adapters.writer import (
+    PARQUET_ROW_GROUP_SIZE,
+    read_manifest,
+    write_batches,
+    write_manifest,
+)
 
 
-def reader(n: int = 3) -> pa.RecordBatchReader:
+def reader(n: int = 3, max_chunksize: int = 2) -> pa.RecordBatchReader:
     table = pa.table(
         {
             "polygon_id": [f"p{i}" for i in range(n)],
@@ -18,7 +23,7 @@ def reader(n: int = 3) -> pa.RecordBatchReader:
             "worldcover_code": [10] * n,
         }
     )
-    return table.to_reader(max_chunksize=2)
+    return table.to_reader(max_chunksize=max_chunksize)
 
 
 def test_every_row_is_written(tmp_path) -> None:
@@ -38,6 +43,20 @@ def test_a_multi_batch_stream_is_written_as_one_file(tmp_path) -> None:
     path = tmp_path / "train.parquet"
     write_batches(reader(7), path)
     assert pq.ParquetFile(path).metadata.num_rows == 7
+
+
+def test_a_large_input_batch_is_split_into_viewer_safe_row_groups(tmp_path) -> None:
+    path = tmp_path / "train.parquet"
+    rows = PARQUET_ROW_GROUP_SIZE + 1
+
+    assert write_batches(reader(rows, max_chunksize=rows), path) == rows
+
+    metadata = pq.ParquetFile(path).metadata
+    assert metadata.num_row_groups == 2
+    assert all(
+        metadata.row_group(index).num_rows <= PARQUET_ROW_GROUP_SIZE
+        for index in range(metadata.num_row_groups)
+    )
 
 
 def test_an_empty_stream_still_produces_a_file_with_the_schema(tmp_path) -> None:

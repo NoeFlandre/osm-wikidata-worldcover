@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from osm_wikidata_worldcover.adapters.coverage_map import MAP_FILENAME
 from osm_wikidata_worldcover.adapters.publish import files_to_publish, publish_dataset
 
 MANIFEST = {
@@ -44,6 +45,13 @@ def test_a_build_without_splits_is_refused(tmp_path) -> None:
 
 def test_publish_writes_a_card_and_uploads_every_file(build, monkeypatch) -> None:
     uploaded: dict[str, object] = {}
+    generated: dict[str, Path] = {}
+
+    def fake_map(build_dir: Path, output_path: Path) -> int:
+        generated["build"] = build_dir
+        generated["output"] = output_path
+        output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return 1
 
     class FakeApi:
         def __init__(self, token=None):
@@ -58,17 +66,27 @@ def test_publish_writes_a_card_and_uploads_every_file(build, monkeypatch) -> Non
             uploaded["repo_type"] = kwargs["repo_type"]
 
     monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.HfApi", FakeApi)
+    monkeypatch.setattr(
+        "osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map
+    )
     url = publish_dataset(build, "someone/thing")
 
     assert uploaded["repo"] == "someone/thing"
     assert uploaded["repo_type"] == "dataset"
     assert (build / "README.md").exists()
     assert "Tree cover" in (build / "README.md").read_text()
+    assert generated == {"build": build, "output": build / MAP_FILENAME}
+    assert (build / MAP_FILENAME).read_bytes().startswith(b"\x89PNG")
+    assert MAP_FILENAME in (build / "README.md").read_text()
     assert url.endswith("someone/thing")
 
 
 def test_publish_defaults_to_a_public_dataset(build, monkeypatch) -> None:
     seen: dict[str, object] = {}
+
+    def fake_map(build_dir: Path, output_path: Path) -> int:
+        output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return 1
 
     class FakeApi:
         def __init__(self, token=None):
@@ -81,6 +99,9 @@ def test_publish_defaults_to_a_public_dataset(build, monkeypatch) -> None:
             return None
 
     monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.HfApi", FakeApi)
+    monkeypatch.setattr(
+        "osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map
+    )
     publish_dataset(build, "someone/thing")
     assert seen["private"] is False
 

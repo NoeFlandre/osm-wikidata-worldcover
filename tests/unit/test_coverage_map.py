@@ -1,0 +1,213 @@
+"""Centroid coverage-map generation."""
+
+from pathlib import Path
+
+import geopandas as gpd
+import pandas as pd
+import pytest
+from shapely.geometry import box
+
+from osm_wikidata_worldcover.adapters.coverage_map import (
+    CLASS_COLORS,
+    MAP_FILENAME,
+    CoverageMapError,
+    centroids_from_build,
+    write_coverage_map,
+)
+from osm_wikidata_worldcover.domain.nomenclature import CLASS_LABELS
+
+_COLUMNS = [
+    "polygon_id",
+    "lat",
+    "lon",
+    "worldcover_code",
+    "worldcover_label",
+]
+
+
+def _write_build(root: Path, rows: dict[str, list[dict[str, object]]]) -> Path:
+    root.mkdir(parents=True)
+    for split in ("train", "validation", "test"):
+        frame = pd.DataFrame(rows.get(split, []), columns=_COLUMNS).astype(
+            {
+                "polygon_id": "string",
+                "lat": "float64",
+                "lon": "float64",
+                "worldcover_code": "Int64",
+                "worldcover_label": "string",
+            }
+        )
+        frame.to_parquet(root / f"{split}.parquet", index=False)
+    return root
+
+
+def test_centroids_are_deduplicated_across_article_rows_and_splits(
+    tmp_path: Path,
+) -> None:
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p2",
+                    "lat": 48.8,
+                    "lon": 2.3,
+                    "worldcover_code": 50,
+                    "worldcover_label": "Built-up",
+                },
+                {
+                    "polygon_id": "p1",
+                    "lat": 51.5,
+                    "lon": -0.1,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                },
+                {
+                    "polygon_id": "p1",
+                    "lat": 51.5,
+                    "lon": -0.1,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                },
+            ],
+            "validation": [
+                {
+                    "polygon_id": "p2",
+                    "lat": 48.8,
+                    "lon": 2.3,
+                    "worldcover_code": 50,
+                    "worldcover_label": "Built-up",
+                },
+            ],
+        },
+    )
+
+    result = centroids_from_build(build)
+
+    assert result["polygon_id"].tolist() == ["p1", "p2"]
+    assert result[["lat", "lon", "worldcover_code"]].to_dict("records") == [
+        {"lat": 51.5, "lon": -0.1, "worldcover_code": 10},
+        {"lat": 48.8, "lon": 2.3, "worldcover_code": 50},
+    ]
+
+
+def test_conflicting_labels_are_rejected(tmp_path: Path) -> None:
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p",
+                    "lat": 1,
+                    "lon": 2,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                },
+                {
+                    "polygon_id": "p",
+                    "lat": 1,
+                    "lon": 2,
+                    "worldcover_code": 50,
+                    "worldcover_label": "Built-up",
+                },
+            ]
+        },
+    )
+
+    with pytest.raises(CoverageMapError, match="conflicting"):
+        centroids_from_build(build)
+
+
+def test_code_label_mismatch_is_rejected(tmp_path: Path) -> None:
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p",
+                    "lat": 1,
+                    "lon": 2,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Built-up",
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(CoverageMapError, match="does not match"):
+        centroids_from_build(build)
+
+
+@pytest.mark.parametrize("lat, lon", [(91, 0), (0, 181)])
+def test_out_of_range_coordinates_are_rejected(
+    tmp_path: Path,
+    lat: float,
+    lon: float,
+) -> None:
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p",
+                    "lat": lat,
+                    "lon": lon,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(CoverageMapError, match="coordinates"):
+        centroids_from_build(build)
+
+
+def test_unknown_worldcover_code_is_rejected(tmp_path: Path) -> None:
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p",
+                    "lat": 1,
+                    "lon": 2,
+                    "worldcover_code": 0,
+                    "worldcover_label": "No data",
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(CoverageMapError, match="unknown WorldCover code"):
+        centroids_from_build(build)
+
+
+def test_palette_covers_the_existing_nomenclature() -> None:
+    assert tuple(CLASS_COLORS) == tuple(CLASS_LABELS)
+
+
+def test_write_coverage_map_creates_png(tmp_path: Path) -> None:
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p",
+                    "lat": 1,
+                    "lon": 2,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                }
+            ]
+        },
+    )
+    land = gpd.GeoDataFrame(
+        {"geometry": [box(-180, -90, 180, 90)]},
+        crs="EPSG:4326",
+    )
+
+    count = write_coverage_map(build, build / MAP_FILENAME, land=land)
+
+    assert count == 1
+    assert (build / MAP_FILENAME).read_bytes().startswith(b"\x89PNG")

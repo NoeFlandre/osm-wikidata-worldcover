@@ -10,6 +10,7 @@ from pathlib import Path
 
 from huggingface_hub import HfApi
 
+from osm_wikidata_worldcover.adapters.coverage_map import MAP_FILENAME, write_coverage_map
 from osm_wikidata_worldcover.domain.card import render
 from osm_wikidata_worldcover.domain.manifest import SPLIT_ORDER
 
@@ -45,6 +46,7 @@ def publish_dataset(
     files_to_publish(build_dir)
 
     manifest = json.loads((build_dir / MANIFEST_NAME).read_text())
+    write_coverage_map(build_dir, build_dir / MAP_FILENAME)
     (build_dir / "README.md").write_text(render(manifest))
 
     api = HfApi(token=token)
