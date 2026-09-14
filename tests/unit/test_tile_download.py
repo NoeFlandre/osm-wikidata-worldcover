@@ -1,6 +1,7 @@
 """Tile caching and download behaviour, without touching the network."""
 
 import urllib.error
+from email.message import Message
 from pathlib import Path
 
 import pytest
@@ -52,7 +53,7 @@ def test_an_empty_cached_file_is_treated_as_absent(tmp_path, monkeypatch) -> Non
 
 def test_an_unpublished_tile_raises(tmp_path, monkeypatch) -> None:
     def not_found(url: str, target: str):
-        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        raise urllib.error.HTTPError(url, 404, "Not Found", Message(), None)
 
     monkeypatch.setattr(wc.urllib.request, "urlretrieve", not_found)
     with pytest.raises(TileNotPublishedError):
@@ -61,7 +62,7 @@ def test_an_unpublished_tile_raises(tmp_path, monkeypatch) -> None:
 
 def test_other_http_errors_are_not_swallowed(tmp_path, monkeypatch) -> None:
     def server_error(url: str, target: str):
-        raise urllib.error.HTTPError(url, 500, "Server Error", {}, None)
+        raise urllib.error.HTTPError(url, 500, "Server Error", Message(), None)
 
     monkeypatch.setattr(wc.urllib.request, "urlretrieve", server_error)
     with pytest.raises(urllib.error.HTTPError):
@@ -71,7 +72,7 @@ def test_other_http_errors_are_not_swallowed(tmp_path, monkeypatch) -> None:
 def test_a_failed_download_leaves_no_partial_file(tmp_path, monkeypatch) -> None:
     def not_found(url: str, target: str):
         Path(target).write_bytes(b"half")
-        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        raise urllib.error.HTTPError(url, 404, "Not Found", Message(), None)
 
     monkeypatch.setattr(wc.urllib.request, "urlretrieve", not_found)
     tiles = WorldCoverTiles(tmp_path)

@@ -19,9 +19,7 @@ __all__ = [
 ]
 
 MAP_FILENAME: Final = "worldcover_centroids.png"
-_WORLD_LAND_URL: Final = (
-    "https://naturalearth.s3.amazonaws.com/110m_physical/ne_110m_land.zip"
-)
+_WORLD_LAND_URL: Final = "https://naturalearth.s3.amazonaws.com/110m_physical/ne_110m_land.zip"
 CLASS_COLORS: Final[dict[int, str]] = {
     10: "#006400",
     20: "#ffbb22",
@@ -43,48 +41,14 @@ class CoverageMapError(ValueError):
 
 def centroids_from_build(build_dir: Path) -> pd.DataFrame:
     """Return one validated ESA-labelled centroid row per polygon."""
-    build_dir = Path(build_dir)
-    paths = [build_dir / f"{split}.parquet" for split in SPLIT_ORDER]
-    missing = [path.name for path in paths if not path.exists()]
-    if missing:
-        raise CoverageMapError(f"build is missing Parquet split(s): {missing}")
-
-    source = _read_parquets_sql(paths)
+    source = _read_parquets_sql(_split_paths(Path(build_dir)))
     connection = duckdb.connect()
     try:
         connection.execute("PRAGMA disable_progress_bar")
         connection.execute(f"CREATE TEMP VIEW coverage_rows AS {source}")
         _validate_rows(connection)
-        conflicts = connection.execute(
-            """
-            SELECT polygon_id
-            FROM coverage_rows
-            GROUP BY polygon_id
-            HAVING count(DISTINCT worldcover_code) > 1
-                OR count(DISTINCT worldcover_label) > 1
-                OR count(DISTINCT lat) > 1
-                OR count(DISTINCT lon) > 1
-            ORDER BY polygon_id
-            LIMIT 5
-            """
-        ).fetchall()
-        if conflicts:
-            examples = [str(row[0]) for row in conflicts]
-            raise CoverageMapError(f"conflicting polygon labels or coordinates: {examples}")
-
-        frame = connection.execute(
-            """
-            SELECT
-                polygon_id,
-                min(lat) AS lat,
-                min(lon) AS lon,
-                min(worldcover_code)::INTEGER AS worldcover_code,
-                min(worldcover_label) AS worldcover_label
-            FROM coverage_rows
-            GROUP BY polygon_id
-            ORDER BY polygon_id
-            """
-        ).fetch_df()
+        _reject_conflicting_polygons(connection)
+        frame = _one_row_per_polygon(connection)
     finally:
         connection.close()
 
@@ -92,6 +56,59 @@ def centroids_from_build(build_dir: Path) -> pd.DataFrame:
         raise CoverageMapError("no ESA-labelled polygons found in the release")
     _validate_labels(frame)
     return frame
+
+
+def _split_paths(build_dir: Path) -> list[Path]:
+    """The release's Parquet splits, refusing a build that is missing any."""
+    paths = [build_dir / f"{split}.parquet" for split in SPLIT_ORDER]
+    missing = [path.name for path in paths if not path.exists()]
+    if missing:
+        raise CoverageMapError(f"build is missing Parquet split(s): {missing}")
+    return paths
+
+
+def _reject_conflicting_polygons(connection: duckdb.DuckDBPyConnection) -> None:
+    """Refuse a polygon that carries more than one label or position.
+
+    One polygon means one point on the map, so disagreement between its rows
+    would silently pick a winner.
+    """
+    conflicts = connection.execute(
+        """
+        SELECT polygon_id
+        FROM coverage_rows
+        GROUP BY polygon_id
+        HAVING count(DISTINCT worldcover_code) > 1
+            OR count(DISTINCT worldcover_label) > 1
+            OR count(DISTINCT lat) > 1
+            OR count(DISTINCT lon) > 1
+        ORDER BY polygon_id
+        LIMIT 5
+        """
+    ).fetchall()
+    if conflicts:
+        examples = [str(row[0]) for row in conflicts]
+        raise CoverageMapError(f"conflicting polygon labels or coordinates: {examples}")
+
+
+def _one_row_per_polygon(connection: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Collapse the release to a single centroid row per polygon.
+
+    ``min`` is safe here only because conflicts have already been refused.
+    """
+    return connection.execute(
+        """
+        SELECT
+            polygon_id,
+            min(lat) AS lat,
+            min(lon) AS lon,
+            min(worldcover_code)::INTEGER AS worldcover_code,
+            min(worldcover_label) AS worldcover_label
+        FROM coverage_rows
+        GROUP BY polygon_id
+        ORDER BY polygon_id
+        """
+    ).fetch_df()
 
 
 def write_coverage_map(
@@ -108,11 +125,7 @@ def write_coverage_map(
     from matplotlib.lines import Line2D
 
     frame = centroids_from_build(build_dir)
-    if land is None:
-        land = _load_land()
-    if land.crs is None:
-        raise CoverageMapError("world land outline has no coordinate reference system")
-    land = land.to_crs("EPSG:4326")
+    land = _base_map(land)
 
     figure, axis = plt.subplots(figsize=(18, 10), dpi=150)
     try:
@@ -181,6 +194,19 @@ def write_coverage_map(
     return len(frame)
 
 
+def _base_map(land: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame:
+    """Return the land outline to draw under the centroids, in WGS84.
+
+    A missing CRS is refused rather than assumed: silently treating projected
+    metres as degrees would scatter the outline far from the points.
+    """
+    if land is None:
+        land = _load_land()
+    if land.crs is None:
+        raise CoverageMapError("world land outline has no coordinate reference system")
+    return land.to_crs("EPSG:4326")
+
+
 def _read_parquets_sql(paths: list[Path]) -> str:
     quoted = ", ".join(f"'{str(path).replace(chr(39), chr(39) * 2)}'" for path in paths)
     return f"""
@@ -218,16 +244,23 @@ def _validate_rows(connection: duckdb.DuckDBPyConnection) -> None:
 
 
 def _validate_labels(frame: pd.DataFrame) -> None:
+    """Refuse any code that is not a real class, or any mislabelled code."""
+    _reject_unknown_codes(frame)
+    _reject_mismatched_labels(frame)
+
+
+def _reject_unknown_codes(frame: pd.DataFrame) -> None:
     unknown = sorted(
         {int(code) for code in frame["worldcover_code"] if int(code) not in CLASS_LABELS}
     )
     if unknown:
         raise CoverageMapError(f"unknown WorldCover code(s): {unknown}")
+
+
+def _reject_mismatched_labels(frame: pd.DataFrame) -> None:
     mismatches = [
         (int(code), str(label))
-        for code, label in zip(
-            frame["worldcover_code"], frame["worldcover_label"], strict=True
-        )
+        for code, label in zip(frame["worldcover_code"], frame["worldcover_label"], strict=True)
         if CLASS_LABELS[int(code)] != label
     ]
     if mismatches:

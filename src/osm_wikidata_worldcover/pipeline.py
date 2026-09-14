@@ -24,7 +24,7 @@ import shapely
 from osm_wikidata_worldcover.adapters.source import RegionTables
 from osm_wikidata_worldcover.adapters.worldcover import (
     TileNotPublishedError,
-    WorldCoverTiles,
+    TileSource,
     class_coverage,
 )
 from osm_wikidata_worldcover.config import Config
@@ -82,7 +82,7 @@ def tiles_for_frame(frame: gpd.GeoDataFrame) -> list[tuple[Tile, ...]]:
 
 def label_polygons(
     frame: gpd.GeoDataFrame,
-    tiles: WorldCoverTiles,
+    tiles: TileSource,
     threshold: float,
     outcome: RegionOutcome,
     keep_tiles: bool = False,
@@ -105,7 +105,7 @@ def label_polygons(
 
 def _label_every_group(
     frame: gpd.GeoDataFrame,
-    tiles: WorldCoverTiles,
+    tiles: TileSource,
     threshold: float,
     outcome: RegionOutcome,
     keep_tiles: bool,
@@ -150,7 +150,7 @@ def _within_size_cap(
 def _process_group(
     group: gpd.GeoDataFrame,
     tile_set: Sequence[Tile],
-    tiles: WorldCoverTiles,
+    tiles: TileSource,
     threshold: float,
     outcome: RegionOutcome,
     keep_tiles: bool,
@@ -168,7 +168,7 @@ def _process_group(
                 tiles.discard(tile)
 
 
-def _fetch(tiles: WorldCoverTiles, tile_set: Sequence[Tile], outcome: RegionOutcome) -> list[Path]:
+def _fetch(tiles: TileSource, tile_set: Sequence[Tile], outcome: RegionOutcome) -> list[Path]:
     """Download every published tile in ``tile_set``, noting the ones that are not.
 
     Paths are de-duplicated: reading one raster twice would count its coverage
@@ -266,7 +266,7 @@ def to_examples(
 def run_region(
     config: Config,
     tables: RegionTables,
-    tiles: WorldCoverTiles,
+    tiles: TileSource,
     keep_tiles: bool = False,
 ) -> tuple[pd.DataFrame, RegionOutcome]:
     """Produce every example for one region."""

@@ -18,7 +18,7 @@ import urllib.request
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
 
 import geopandas as gpd
 import numpy as np
@@ -28,7 +28,13 @@ from exactextract import exact_extract
 
 from osm_wikidata_worldcover.domain.tiling import Tile
 
-__all__ = ["DEFAULT_BASE_URL", "TileNotPublishedError", "WorldCoverTiles", "class_coverage"]
+__all__ = [
+    "DEFAULT_BASE_URL",
+    "TileNotPublishedError",
+    "TileSource",
+    "WorldCoverTiles",
+    "class_coverage",
+]
 
 DEFAULT_BASE_URL: Final[str] = "https://esa-worldcover.s3.eu-central-1.amazonaws.com"
 
@@ -43,6 +49,23 @@ _OPS: Final[Sequence[str]] = ("unique", "frac", "count")
 
 class TileNotPublishedError(FileNotFoundError):
     """Raised for a tile the product does not publish (open ocean, mostly)."""
+
+
+class TileSource(Protocol):
+    """What the pipeline needs of a tile store: get one, then let it go.
+
+    Stated as a protocol so the pipeline depends on the capability rather than
+    on :class:`WorldCoverTiles` itself, and a stand-in can satisfy it honestly
+    instead of merely happening to have the right methods.
+    """
+
+    def ensure(self, tile: Tile) -> Path:
+        """Return a local path to ``tile``, fetching it if absent."""
+        ...
+
+    def discard(self, tile: Tile) -> None:
+        """Release ``tile``; the store decides when to delete it."""
+        ...
 
 
 class WorldCoverTiles:

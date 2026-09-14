@@ -67,9 +67,7 @@ def test_publish_writes_a_card_and_uploads_every_file(build, monkeypatch) -> Non
             uploaded["repo_type"] = kwargs["repo_type"]
 
     monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.HfApi", FakeApi)
-    monkeypatch.setattr(
-        "osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map
-    )
+    monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map)
     url = publish_dataset(build, "someone/thing")
 
     assert uploaded["repo"] == "someone/thing"
@@ -101,9 +99,7 @@ def test_publish_defaults_to_a_public_dataset(build, monkeypatch) -> None:
             return None
 
     monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.HfApi", FakeApi)
-    monkeypatch.setattr(
-        "osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map
-    )
+    monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map)
     publish_dataset(build, "someone/thing")
     assert seen["private"] is False
 

@@ -50,12 +50,36 @@ def test_centroids_are_deduplicated_across_article_rows_and_splits(tmp_path: Pat
         tmp_path / "build",
         {
             "train": [
-                {"polygon_id": "p2", "lat": 48.8, "lon": 2.3, "worldcover_code": 50, "worldcover_label": "Built-up"},
-                {"polygon_id": "p1", "lat": 51.5, "lon": -0.1, "worldcover_code": 10, "worldcover_label": "Tree cover"},
-                {"polygon_id": "p1", "lat": 51.5, "lon": -0.1, "worldcover_code": 10, "worldcover_label": "Tree cover"},
+                {
+                    "polygon_id": "p2",
+                    "lat": 48.8,
+                    "lon": 2.3,
+                    "worldcover_code": 50,
+                    "worldcover_label": "Built-up",
+                },
+                {
+                    "polygon_id": "p1",
+                    "lat": 51.5,
+                    "lon": -0.1,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                },
+                {
+                    "polygon_id": "p1",
+                    "lat": 51.5,
+                    "lon": -0.1,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                },
             ],
             "validation": [
-                {"polygon_id": "p2", "lat": 48.8, "lon": 2.3, "worldcover_code": 50, "worldcover_label": "Built-up"},
+                {
+                    "polygon_id": "p2",
+                    "lat": 48.8,
+                    "lon": 2.3,
+                    "worldcover_code": 50,
+                    "worldcover_label": "Built-up",
+                },
             ],
         },
     )
@@ -75,10 +99,27 @@ Cover conflicting labels for one polygon, invalid coordinates, and a non-WorldCo
 
 ```python
 def test_conflicting_labels_are_rejected(tmp_path: Path) -> None:
-    build = _write_build(tmp_path / "build", {"train": [
-        {"polygon_id": "p", "lat": 1, "lon": 2, "worldcover_code": 10, "worldcover_label": "Tree cover"},
-        {"polygon_id": "p", "lat": 1, "lon": 2, "worldcover_code": 50, "worldcover_label": "Built-up"},
-    ]})
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p",
+                    "lat": 1,
+                    "lon": 2,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                },
+                {
+                    "polygon_id": "p",
+                    "lat": 1,
+                    "lon": 2,
+                    "worldcover_code": 50,
+                    "worldcover_label": "Built-up",
+                },
+            ]
+        },
+    )
 
     with pytest.raises(CoverageMapError, match="conflicting"):
         centroids_from_build(build)
@@ -86,9 +127,20 @@ def test_conflicting_labels_are_rejected(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("lat, lon", [(91, 0), (0, 181)])
 def test_out_of_range_coordinates_are_rejected(tmp_path: Path, lat: float, lon: float) -> None:
-    build = _write_build(tmp_path / "build", {"train": [
-        {"polygon_id": "p", "lat": lat, "lon": lon, "worldcover_code": 10, "worldcover_label": "Tree cover"},
-    ]})
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p",
+                    "lat": lat,
+                    "lon": lon,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                },
+            ]
+        },
+    )
 
     with pytest.raises(CoverageMapError, match="coordinates"):
         centroids_from_build(build)
@@ -100,9 +152,20 @@ Construct a one-polygon GeoDataFrame in EPSG:4326, call `write_coverage_map()` w
 
 ```python
 def test_write_coverage_map_creates_png(tmp_path: Path) -> None:
-    build = _write_build(tmp_path / "build", {"train": [
-        {"polygon_id": "p", "lat": 1, "lon": 2, "worldcover_code": 10, "worldcover_label": "Tree cover"},
-    ]})
+    build = _write_build(
+        tmp_path / "build",
+        {
+            "train": [
+                {
+                    "polygon_id": "p",
+                    "lat": 1,
+                    "lon": 2,
+                    "worldcover_code": 10,
+                    "worldcover_label": "Tree cover",
+                },
+            ]
+        },
+    )
     land = gpd.GeoDataFrame(
         {"geometry": [shapely.geometry.box(-180, -90, 180, 90)]},
         crs="EPSG:4326",
@@ -146,11 +209,14 @@ The public interface is:
 ```python
 MAP_FILENAME = "worldcover_centroids.png"
 
+
 class CoverageMapError(ValueError):
     """The release cannot be represented by a valid centroid map."""
 
+
 def centroids_from_build(build_dir: Path) -> pd.DataFrame:
     """Return one validated ESA-labelled centroid row per polygon."""
+
 
 def write_coverage_map(
     build_dir: Path,
@@ -173,9 +239,17 @@ Use the fixed ESA palette keyed by the existing 11 codes:
 
 ```python
 CLASS_COLORS = {
-    10: "#006400", 20: "#ffbb22", 30: "#ffff4c", 40: "#f096ff",
-    50: "#fa0000", 60: "#b4b4b4", 70: "#f0f0f0", 80: "#0064c8",
-    90: "#0096a0", 95: "#00cf75", 100: "#fae6a0",
+    10: "#006400",
+    20: "#ffbb22",
+    30: "#ffff4c",
+    40: "#f096ff",
+    50: "#fa0000",
+    60: "#b4b4b4",
+    70: "#f0f0f0",
+    80: "#0064c8",
+    90: "#0096a0",
+    95: "#00cf75",
+    100: "#fae6a0",
 }
 ```
 
@@ -236,9 +310,8 @@ def fake_map(build_dir: Path, output_path: Path, **_: object) -> int:
     output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
     return 1
 
-monkeypatch.setattr(
-    "osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map
-)
+
+monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map)
 ```
 
 - [ ] **Step 2: Run the publisher test to confirm the new integration assertion fails.**

@@ -124,9 +124,7 @@ def test_manifest_includes_a_named_polygon_example(shards, tmp_path) -> None:
 
     result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
 
-    assert result.manifest["example_polygons"] == [
-        {"name": "N", "worldcover_label": "Tree cover"}
-    ]
+    assert result.manifest["example_polygons"] == [{"name": "N", "worldcover_label": "Tree cover"}]
 
 
 def test_provenance_is_attached(shards, tmp_path) -> None:
@@ -184,7 +182,9 @@ def test_split_writes_enable_large_arrow_string_buffers(tmp_path) -> None:
         paths, rows = _write_splits(connection, tmp_path)
 
         assert rows == 1
-        assert connection.execute("SELECT current_setting('arrow_large_buffer_size')").fetchone()[0]
+        setting = connection.execute("SELECT current_setting('arrow_large_buffer_size')").fetchone()
+        assert setting is not None
+        assert setting[0]
         assert {path.stem for path in paths} == {"train", "validation", "test"}
     finally:
         connection.close()

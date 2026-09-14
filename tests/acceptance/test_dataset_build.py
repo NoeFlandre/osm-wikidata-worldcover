@@ -13,7 +13,7 @@ from tests.conftest import write_raster
 from osm_wikidata_worldcover.adapters.source import RegionTables
 from osm_wikidata_worldcover.config import Config
 from osm_wikidata_worldcover.domain.nomenclature import is_valid_code
-from osm_wikidata_worldcover.finalize import finalize_shards
+from osm_wikidata_worldcover.finalize import StreamedBuild, finalize_shards
 from osm_wikidata_worldcover.pipeline import RegionOutcome, run_region
 
 scenarios("features/dataset_build.feature")
@@ -30,7 +30,7 @@ class World:
         self.links: list[dict] = []
         self.documents: list[dict] = []
         self.extra_regions: list[dict] = []
-        self.result = None
+        self.result: StreamedBuild | None = None
         self.outcome: RegionOutcome | None = None
         self.written: list[list[bytes]] = []
         self.scratch: Path = Path()
@@ -200,6 +200,7 @@ def build(world: World) -> None:
         documents=pd.DataFrame(world.documents),
     )
     config = Config()
+    assert world.raster is not None, "no land cover map was given"
     examples, outcome = run_region(config, tables, FixedTiles(world.raster))
     world.outcome = outcome
     # Assembly reads shards from disk, as it does in a real run.
@@ -225,7 +226,7 @@ def _build_twice(world: World, tmp_path: Path) -> None:
     for run in ("a", "b"):
         world.scratch = tmp_path / run
         build(world)
-        world.written.append([p.read_bytes() for p in world.result.paths])
+        world.written.append([p.read_bytes() for p in _built(world).paths])
 
 
 # --------------------------------------------------------------------------
@@ -233,21 +234,27 @@ def _build_twice(world: World, tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
+def _built(world: World) -> StreamedBuild:
+    """The finished build, refusing a Then step that ran before the When."""
+    assert world.result is not None, "the dataset was never built"
+    return world.result
+
+
 def _rows(world: World) -> pd.DataFrame:
     """Every published row, read back from the files that were written."""
-    splits = [p for p in world.result.paths if p.suffix == ".parquet"]
+    splits = [p for p in _built(world).paths if p.suffix == ".parquet"]
     return pd.concat([pd.read_parquet(p) for p in splits], ignore_index=True)
 
 
 @then(parsers.parse("the dataset contains {count:d} example"))
 @then(parsers.parse("the dataset contains {count:d} examples"))
 def _count(world: World, count: int) -> None:
-    assert world.result.rows == count
+    assert _built(world).rows == count
 
 
 @then("the dataset is empty")
 def _empty(world: World) -> None:
-    assert world.result.rows == 0
+    assert _built(world).rows == 0
 
 
 @then(parsers.parse('the example is labelled "{label}"'))
@@ -262,6 +269,7 @@ def _fraction(world: World, value: float) -> None:
 
 @then(parsers.parse('the polygon was rejected because "{reason}"'))
 def _rejected(world: World, reason: str) -> None:
+    assert world.outcome is not None
     assert world.outcome.rejections[reason] >= 1
 
 
@@ -287,7 +295,8 @@ def _no_document_leak(world: World) -> None:
 
 @then("the build reports no violations")
 def _no_violations(world: World) -> None:
-    assert world.result.report.ok, world.result.report.violations
+    report = _built(world).report
+    assert report.ok, report.violations
 
 
 @then("every label is a real WorldCover class")

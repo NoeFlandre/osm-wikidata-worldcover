@@ -44,4 +44,5 @@ def test_labels_are_unique() -> None:
 
 def test_class_table_is_immutable() -> None:
     with pytest.raises(TypeError):
-        nom.CLASS_LABELS[10] = "something else"  # type: ignore[index]
+        # The assignment is meant to be rejected; that is the assertion.
+        nom.CLASS_LABELS[10] = "something else"  # ty: ignore[invalid-assignment]

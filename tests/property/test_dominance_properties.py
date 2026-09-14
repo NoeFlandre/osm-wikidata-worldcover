@@ -19,7 +19,7 @@ thresholds = st.floats(min_value=0.01, max_value=1.0, allow_nan=False, allow_inf
 
 
 @st.composite
-def coverage(draw: st.DrawFn) -> tuple[list[tuple[str, float]], float]:
+def coverage(draw: st.DrawFn) -> tuple[list[tuple[int, float]], float]:
     """A polygon area plus non-overlapping per-class areas summing to at most it.
 
     This mirrors reality: every pixel carries exactly one class, so a polygon's

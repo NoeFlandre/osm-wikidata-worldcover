@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
+from osm_wikidata_worldcover.adapters import coverage_map
 from osm_wikidata_worldcover.adapters.coverage_map import (
     CLASS_COLORS,
     MAP_FILENAME,
@@ -211,3 +212,52 @@ def test_write_coverage_map_creates_png(tmp_path: Path) -> None:
 
     assert count == 1
     assert (build / MAP_FILENAME).read_bytes().startswith(b"\x89PNG")
+
+
+class TestLandOutline:
+    """The base map is fetched from Natural Earth, so its failures matter."""
+
+    def test_a_failed_fetch_is_reported_as_a_map_error(self, monkeypatch) -> None:
+        def explode(*_args, **_kwargs):
+            raise OSError("network is down")
+
+        monkeypatch.setattr(coverage_map.gpd, "read_file", explode)
+        with pytest.raises(coverage_map.CoverageMapError, match="Natural Earth"):
+            coverage_map._load_land()
+
+    def test_an_empty_outline_is_refused(self, monkeypatch) -> None:
+        """An empty outline would render a map with no land on it."""
+        monkeypatch.setattr(
+            coverage_map.gpd,
+            "read_file",
+            lambda *_a, **_k: gpd.GeoDataFrame({"geometry": []}, geometry="geometry"),
+        )
+        with pytest.raises(coverage_map.CoverageMapError, match="empty"):
+            coverage_map._load_land()
+
+    def test_a_usable_outline_is_returned(self, monkeypatch) -> None:
+        outline = gpd.GeoDataFrame(
+            {"geometry": [box(-1, -1, 1, 1)]}, geometry="geometry", crs="EPSG:4326"
+        )
+        monkeypatch.setattr(coverage_map.gpd, "read_file", lambda *_a, **_k: outline)
+        assert len(coverage_map._load_land()) == 1
+
+    def test_an_outline_without_a_crs_is_refused(self, tmp_path: Path) -> None:
+        """Without a CRS the outline cannot be aligned with the centroids."""
+        build = _write_build(
+            tmp_path / "build",
+            {
+                "train": [
+                    {
+                        "polygon_id": "p1",
+                        "lat": 48.8,
+                        "lon": 2.3,
+                        "worldcover_code": 50,
+                        "worldcover_label": "Built-up",
+                    }
+                ]
+            },
+        )
+        outline = gpd.GeoDataFrame({"geometry": [box(-1, -1, 1, 1)]}, geometry="geometry")
+        with pytest.raises(coverage_map.CoverageMapError, match="coordinate reference system"):
+            coverage_map.write_coverage_map(build, tmp_path / "map.png", land=outline)
