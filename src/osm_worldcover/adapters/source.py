@@ -5,7 +5,7 @@ a region is the natural unit of work: its polygons, its polygon-document links
 and its documents are read together and never need a global join.
 
 Files are addressed on a local snapshot directory. Downloading that snapshot is
-a separate concern (see :mod:`osm_wikidata_worldcover.adapters.hub`), which
+a separate concern (see :mod:`osm_worldcover.adapters.hub`), which
 keeps this module usable against a fixture directory in tests.
 """
 
@@ -15,6 +15,12 @@ from typing import Final, Self
 
 import pandas as pd
 import pyarrow.parquet as pq
+
+from osm_worldcover.adapters.source_profiles import (
+    load_description_region,
+    load_website_region,
+)
+from osm_worldcover.sources import DEFAULT_SOURCE, SourceRecipe, recipe_for
 
 __all__ = [
     "DOCUMENT_COLUMNS",
@@ -64,9 +70,11 @@ DOCUMENT_COLUMNS: Final[list[str]] = [
 ]
 
 
-def region_stems(root: Path) -> list[str]:
+def region_stems(root: Path, source: str | SourceRecipe = DEFAULT_SOURCE) -> list[str]:
     """Return every region name in ``root``, sorted for reproducible iteration."""
-    return sorted(p.stem for p in (root / "polygons").glob("*.parquet"))
+    recipe = _recipe(source)
+    directory = root / recipe.region_prefix.removesuffix("/")
+    return sorted(p.stem for p in directory.glob("*.parquet"))
 
 
 def load_polygons(root: Path, stem: str) -> pd.DataFrame:
@@ -98,8 +106,16 @@ class RegionTables:
     documents: pd.DataFrame
 
     @classmethod
-    def load(cls, root: Path, stem: str) -> Self:
+    def load(cls, root: Path, stem: str, source: str | SourceRecipe = DEFAULT_SOURCE) -> Self:
         """Read every table for ``stem``, with both text projects concatenated."""
+        recipe = _recipe(source)
+        if recipe.layout == "description":
+            normalized = load_description_region(root, stem)
+            return cls(stem, normalized.polygons, normalized.links, normalized.documents)
+        if recipe.layout == "website":
+            normalized = load_website_region(root, stem)
+            return cls(stem, normalized.polygons, normalized.links, normalized.documents)
+
         frames = []
         for project in PROJECTS:
             frame = load_documents(root, stem, project)
@@ -111,6 +127,11 @@ class RegionTables:
             links=load_links(root, stem),
             documents=pd.concat(frames, ignore_index=True),
         )
+
+
+def _recipe(source: str | SourceRecipe) -> SourceRecipe:
+    """Accept a recipe object at internal seams and a name at public seams."""
+    return source if isinstance(source, SourceRecipe) else recipe_for(source)
 
 
 def _read(path: Path, columns: list[str]) -> pd.DataFrame:

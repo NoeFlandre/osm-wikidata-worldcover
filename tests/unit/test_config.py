@@ -4,13 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from osm_wikidata_worldcover.config import Config
+from osm_worldcover.config import Config
 
 
 def test_defaults_are_usable_without_arguments() -> None:
     config = Config()
     assert config.threshold == 0.8
     assert config.worldcover_version == "v200"
+
+
+def test_named_source_selects_its_input_dataset() -> None:
+    config = Config(source="website")
+    assert config.source_dataset == "NoeFlandre/osm-polygon-website-tag"
+    assert config.source_recipe.output_dataset == "NoeFlandre/osm-polygon-website-tag-worldcover"
 
 
 def test_from_mapping_coerces_paths() -> None:

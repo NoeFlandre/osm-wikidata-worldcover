@@ -10,14 +10,15 @@ from typing import Any, Self
 
 import yaml
 
-from osm_wikidata_worldcover.adapters.worldcover import DEFAULT_CACHED_TILES
-from osm_wikidata_worldcover.domain.dominance import DEFAULT_THRESHOLD
-from osm_wikidata_worldcover.domain.splits import DEFAULT_RATIOS, DEFAULT_RESOLUTION, DEFAULT_SEED
-from osm_wikidata_worldcover.domain.text import DEFAULT_MIN_WORDS
+from osm_worldcover.adapters.worldcover import DEFAULT_CACHED_TILES
+from osm_worldcover.domain.dominance import DEFAULT_THRESHOLD
+from osm_worldcover.domain.splits import DEFAULT_RATIOS, DEFAULT_RESOLUTION, DEFAULT_SEED
+from osm_worldcover.domain.text import DEFAULT_MIN_WORDS
+from osm_worldcover.sources import DEFAULT_SOURCE, SourceRecipe, recipe_for
 
-__all__ = ["DEFAULT_SOURCE_DATASET", "Config"]
+__all__ = ["DEFAULT_SOURCE", "DEFAULT_SOURCE_DATASET", "Config"]
 
-DEFAULT_SOURCE_DATASET = "NoeFlandre/osm-polygon-wikidata-and-wikipedia"
+DEFAULT_SOURCE_DATASET = recipe_for(DEFAULT_SOURCE).source_dataset
 
 #: Polygons larger than this are refused before any raster is read.
 #: Zonal-statistics cost is linear in area: 10,000 km2 is ~10^8 pixels and
@@ -30,6 +31,7 @@ DEFAULT_MAX_POLYGON_AREA_M2 = 1e10
 
 #: Equal-area projection used whenever a real-world area is needed.
 EQUAL_AREA_CRS = "EPSG:6933"
+CODE_REPOSITORY = "https://github.com/NoeFlandre/osm-worldcover"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +45,7 @@ class Config:
     worldcover_year: int = 2021
     cached_tiles: int = DEFAULT_CACHED_TILES
 
+    source: str = DEFAULT_SOURCE
     source_dataset: str = DEFAULT_SOURCE_DATASET
     source_revision: str | None = None
     regions: tuple[str, ...] | None = None
@@ -58,6 +61,17 @@ class Config:
 
     dataset_version: str = "1.0.0"
     extra: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Resolve the named recipe while retaining custom repository overrides."""
+        recipe_for(self.source)
+        if self.source != DEFAULT_SOURCE and self.source_dataset == DEFAULT_SOURCE_DATASET:
+            object.__setattr__(self, "source_dataset", recipe_for(self.source).source_dataset)
+
+    @property
+    def source_recipe(self) -> SourceRecipe:
+        """Return the immutable metadata for this build's source."""
+        return recipe_for(self.source)
 
     @classmethod
     def from_yaml(cls, path: Path) -> Self:
@@ -82,10 +96,18 @@ class Config:
         """The subset of settings recorded in the manifest."""
         return {
             "dataset_version": self.dataset_version,
+            "source": self.source,
             "worldcover_version": self.worldcover_version,
             "worldcover_year": self.worldcover_year,
             "source_dataset": self.source_dataset,
             "source_revision": self.source_revision,
+            "source_url": self.source_recipe.source_url,
+            "code_repository": CODE_REPOSITORY,
+            "source_display_name": self.source_recipe.display_name,
+            "source_text_description": self.source_recipe.text_description,
+            "output_dataset": self.source_recipe.output_dataset,
+            "dataset_license": self.source_recipe.dataset_license,
+            "text_license": self.source_recipe.text_license,
             "dominance_threshold": self.threshold,
             "max_polygon_area_m2": self.max_polygon_area_m2,
             "min_words": self.min_words,

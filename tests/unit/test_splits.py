@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.domain.splits import (
+from osm_worldcover.domain.splits import (
     DEFAULT_RATIOS,
     DEFAULT_RESOLUTION,
     Split,

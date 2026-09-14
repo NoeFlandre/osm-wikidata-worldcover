@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from osm_wikidata_worldcover.domain.manifest import DatasetCounts, GeographicCoverage, build
+from osm_worldcover.domain.manifest import DatasetCounts, GeographicCoverage, build
 
 
 @pytest.fixture

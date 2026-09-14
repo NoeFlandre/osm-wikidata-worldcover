@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.domain import nomenclature as nom
+from osm_worldcover.domain import nomenclature as nom
 
 
 def test_there_are_eleven_worldcover_classes() -> None:

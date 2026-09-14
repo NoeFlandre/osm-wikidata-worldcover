@@ -21,23 +21,23 @@ import geopandas as gpd
 import pandas as pd
 import shapely
 
-from osm_wikidata_worldcover.adapters.source import RegionTables
-from osm_wikidata_worldcover.adapters.worldcover import (
+from osm_worldcover.adapters.source import RegionTables
+from osm_worldcover.adapters.worldcover import (
     TileNotPublishedError,
     TileSource,
     class_coverage,
 )
-from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.domain import nomenclature
-from osm_wikidata_worldcover.domain.dominance import (
+from osm_worldcover.config import Config
+from osm_worldcover.domain import nomenclature
+from osm_worldcover.domain.dominance import (
     DominanceOutcome,
     OverlappingCoverageError,
     RejectionReason,
     decide,
 )
-from osm_wikidata_worldcover.domain.geometry import is_usable_polygon
-from osm_wikidata_worldcover.domain.text import is_usable, normalise, word_count
-from osm_wikidata_worldcover.domain.tiling import Tile, tiles_for_bbox
+from osm_worldcover.domain.geometry import is_usable_polygon
+from osm_worldcover.domain.text import is_usable, normalise, word_count
+from osm_worldcover.domain.tiling import Tile, tiles_for_bbox
 
 __all__ = ["RegionOutcome", "label_polygons", "prepare_polygons", "run_region", "to_examples"]
 

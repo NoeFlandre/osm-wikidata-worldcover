@@ -15,11 +15,11 @@ clock. Everything that touches the outside world lives in `adapters/`.
 A global run touches 2,499 WorldCover tiles, about 229 GB. Nothing is staged up
 front (ADR 0004):
 
-1. Download one region's polygons, links and documents.
+1. Download one region's polygons and source-specific text fields.
 2. Parse the geometries; drop the invalid ones and count them.
 3. Group polygons by the tiles they touch.
 4. For each group: fetch the tiles, measure coverage, discard the tiles.
-5. Keep polygons one class dominates; join those to their articles.
+5. Keep polygons one class dominates; join those to their source text.
 6. Write the region's shard, then delete its downloaded tables.
 
 Peak disk stays near a single tile. An interrupted run resumes by skipping

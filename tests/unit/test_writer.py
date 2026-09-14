@@ -7,7 +7,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from osm_wikidata_worldcover.adapters.writer import (
+from osm_worldcover.adapters.writer import (
     PARQUET_ROW_GROUP_SIZE,
     read_manifest,
     write_batches,

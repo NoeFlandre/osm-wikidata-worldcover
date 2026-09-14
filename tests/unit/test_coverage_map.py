@@ -7,15 +7,15 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from osm_wikidata_worldcover.adapters import coverage_map
-from osm_wikidata_worldcover.adapters.coverage_map import (
+from osm_worldcover.adapters import coverage_map
+from osm_worldcover.adapters.coverage_map import (
     CLASS_COLORS,
     MAP_FILENAME,
     CoverageMapError,
     centroids_from_build,
     write_coverage_map,
 )
-from osm_wikidata_worldcover.domain.nomenclature import CLASS_LABELS
+from osm_worldcover.domain.nomenclature import CLASS_LABELS
 
 _COLUMNS = [
     "polygon_id",

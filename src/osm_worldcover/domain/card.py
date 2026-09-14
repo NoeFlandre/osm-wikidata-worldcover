@@ -9,30 +9,6 @@ from typing import Any
 
 __all__ = ["render"]
 
-_HEADER = """---
-license: cc-by-sa-4.0
-language:
-  - multilingual
-tags:
-  - land-cover
-  - openstreetmap
-  - wikipedia
-  - geospatial
-  - text-classification
-task_categories:
-  - text-classification
-configs:
-  - config_name: default
-    data_files:
-      - split: train
-        path: train.parquet
-      - split: validation
-        path: validation.parquet
-      - split: test
-        path: test.parquet
----
-"""
-
 
 def render(manifest: Mapping[str, Any]) -> str:
     """Return the dataset card for ``manifest``."""
@@ -42,8 +18,8 @@ def render(manifest: Mapping[str, Any]) -> str:
 
     return "".join(
         [
-            _HEADER,
-            _intro(counts, threshold_pct),
+            _header(settings),
+            _intro(counts, threshold_pct, settings),
             _coverage_map(counts),
             _example_polygons(manifest.get("example_polygons", [])),
             _caveat(),
@@ -81,15 +57,50 @@ def render(manifest: Mapping[str, Any]) -> str:
     )
 
 
-def _intro(counts: Mapping[str, Any], threshold_pct: int) -> str:
-    total = counts["examples"]["total"]
-    return f"""
-# osm-wikidata-worldcover
+def _header(settings: Mapping[str, Any]) -> str:
+    """Render Hub metadata from the selected source recipe."""
+    source = settings.get("source", "wikidata")
+    tags = ["land-cover", "openstreetmap"]
+    if source == "wikidata":
+        tags.append("wikipedia")
+    if source in {"description", "website"}:
+        tags.append(f"osm-{source}")
+    tags.extend(("geospatial", "text-classification"))
+    tag_lines = "\n".join(f"  - {tag}" for tag in tags)
+    license_name = settings.get("dataset_license", "cc-by-sa-4.0")
+    return f"""---
+license: {license_name}
+language:
+  - multilingual
+tags:
+{tag_lines}
+task_categories:
+  - text-classification
+configs:
+  - config_name: default
+    data_files:
+      - split: train
+        path: train.parquet
+      - split: validation
+        path: validation.parquet
+      - split: test
+        path: test.parquet
+---
+"""
 
-A supervised **text to land-cover** dataset. Each example pairs a Wikipedia or
-Wikivoyage article with the [ESA WorldCover](https://esa-worldcover.org/) class
-that covers at least {threshold_pct}% of the OpenStreetMap polygon the article
-describes.
+
+def _intro(counts: Mapping[str, Any], threshold_pct: int, settings: Mapping[str, Any]) -> str:
+    total = counts["examples"]["total"]
+    output_dataset = settings.get("output_dataset", "NoeFlandre/osm-wikidata-worldcover")
+    title = str(output_dataset).rsplit("/", 1)[-1]
+    source_text = str(settings.get("source_text_description", "a Wikipedia or Wikivoyage article"))
+    source_text = source_text[:1].lower() + source_text[1:]
+    return f"""
+# {title}
+
+A supervised **text to land-cover** dataset. Each example pairs {source_text}
+with the [ESA WorldCover](https://esa-worldcover.org/) class that covers at
+least {threshold_pct}% of the OpenStreetMap polygon the text describes.
 
 **{total:,} examples**, {counts["polygons"]["total"]:,} distinct polygons,
 {counts["documents"]["total"]:,} distinct documents.
@@ -97,7 +108,7 @@ describes.
 ```python
 from datasets import load_dataset
 
-ds = load_dataset("NoeFlandre/osm-wikidata-worldcover")
+ds = load_dataset("{output_dataset}")
 print(ds["train"][0]["text"][:200], ds["train"][0]["worldcover_label"])
 ```
 """
@@ -205,7 +216,7 @@ def _schema() -> str:
 
 | column | meaning |
 | --- | --- |
-| `text` | Full article text |
+| `text` | Full source text |
 | `worldcover_code` / `worldcover_label` | The target class |
 | `dominant_fraction` | Share of the polygon covered by that class |
 | `observed_fraction` | Share of the polygon observed at all |
@@ -222,10 +233,17 @@ def _provenance(
     rejections: Mapping[str, int],
     deduplication: Mapping[str, int],
 ) -> str:
+    source_dataset = settings.get("source_dataset")
+    source_url = settings.get("source_url", f"https://huggingface.co/datasets/{source_dataset}")
+    code_repository = settings.get(
+        "code_repository", "https://github.com/NoeFlandre/osm-worldcover"
+    )
+    text_license = settings.get(
+        "text_license", "Article text is CC BY-SA 4.0 (Wikipedia/Wikivoyage)"
+    )
     lines = [
         "\n## Provenance\n",
-        f"- Source: [`{settings.get('source_dataset')}`]"
-        f"(https://huggingface.co/datasets/{settings.get('source_dataset')})"
+        f"- Source: [`{source_dataset}`]({source_url})"
         f" at revision `{settings.get('source_revision')}`\n",
         f"- Land cover: ESA WorldCover {settings.get('worldcover_year')}"
         f" {settings.get('worldcover_version')} (10 m)\n",
@@ -234,8 +252,7 @@ def _provenance(
         f"- Maximum polygon area: {settings.get('max_polygon_area_m2')} m2\n",
         f"- Split seed: {settings.get('split_seed')},"
         f" H3 resolution {settings.get('h3_resolution')}\n",
-        "\nCode: [github.com/NoeFlandre/osm-wikidata-worldcover]"
-        "(https://github.com/NoeFlandre/osm-wikidata-worldcover)\n",
+        f"\nCode: [{code_repository.removeprefix('https://')}]({code_repository})\n",
     ]
     if rejections:
         lines.append("\n### Polygons refused\n\n")
@@ -247,8 +264,8 @@ def _provenance(
         lines += [f"| `{k}` | {v:,} |\n" for k, v in sorted(deduplication.items())]
     lines.append(
         "\n## Licence\n\n"
-        "Article text is CC BY-SA 4.0 (Wikipedia/Wikivoyage). OpenStreetMap "
-        "geometry is ODbL. ESA WorldCover is CC BY 4.0.\n"
+        f"{str(text_license).rstrip('.')}. OpenStreetMap geometry is ODbL. "
+        "ESA WorldCover is CC BY 4.0.\n"
     )
     return "".join(lines)
 

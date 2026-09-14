@@ -1,37 +1,37 @@
 [importlinter]
-root_package = osm_wikidata_worldcover
+root_package = osm_worldcover
 
 [importlinter:contract:domain-is-pure]
 name = Domain must not depend on adapters, pipeline or CLI
 type = forbidden
 source_modules =
-    osm_wikidata_worldcover.domain
+    osm_worldcover.domain
 forbidden_modules =
-    osm_wikidata_worldcover.adapters
-    osm_wikidata_worldcover.pipeline
-    osm_wikidata_worldcover.cli
-    osm_wikidata_worldcover.config
+    osm_worldcover.adapters
+    osm_worldcover.pipeline
+    osm_worldcover.cli
+    osm_worldcover.config
 
 [importlinter:contract:domain-layers]
 name = Domain modules form a strict hierarchy, so they cannot cycle
 type = layers
 layers =
-    osm_wikidata_worldcover.domain.validation
-    osm_wikidata_worldcover.domain.manifest
-    osm_wikidata_worldcover.domain.dominance
-    osm_wikidata_worldcover.domain.splits
-    osm_wikidata_worldcover.domain.text
-    osm_wikidata_worldcover.domain.geometry
-    osm_wikidata_worldcover.domain.tiling
-    osm_wikidata_worldcover.domain.nomenclature
+    osm_worldcover.domain.validation
+    osm_worldcover.domain.manifest
+    osm_worldcover.domain.dominance
+    osm_worldcover.domain.splits
+    osm_worldcover.domain.text
+    osm_worldcover.domain.geometry
+    osm_worldcover.domain.tiling
+    osm_worldcover.domain.nomenclature
 
 [importlinter:contract:layers]
 name = Layered architecture
 type = layers
 layers =
-    osm_wikidata_worldcover.cli
-    osm_wikidata_worldcover.build
-    osm_wikidata_worldcover.finalize
-    osm_wikidata_worldcover.pipeline
-    osm_wikidata_worldcover.adapters
-    osm_wikidata_worldcover.domain
+    osm_worldcover.cli
+    osm_worldcover.build
+    osm_worldcover.finalize
+    osm_worldcover.pipeline
+    osm_worldcover.adapters
+    osm_worldcover.domain

@@ -1,7 +1,7 @@
 [project]
-name = "osm-wikidata-worldcover"
+name = "osm-worldcover"
 version = "0.1.0"
-description = "Build a supervised text -> ESA WorldCover land-cover dataset from OSM polygons linked to Wikipedia/Wikivoyage documents."
+description = "Build supervised ESA WorldCover datasets from OSM polygon text sources."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.scripts]
-oww = "osm_wikidata_worldcover.cli:app"
+owc = "osm_worldcover.cli:app"
 
 [dependency-groups]
 dev = [
@@ -45,7 +45,7 @@ requires = ["uv_build>=0.11,<0.12"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = "osm_wikidata_worldcover"
+module-name = "osm_worldcover"
 module-root = "src"
 
 [tool.ruff]
@@ -76,14 +76,14 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["src/osm_wikidata_worldcover"]
+source = ["src/osm_worldcover"]
 branch = true
 
 [tool.mutmut]
 # The whole package is copied so imports resolve, but only the logic is
 # mutated: the adapters and CLI are thin shells over other people's I/O, where
 # a surviving mutant says more about the stub than about our tests.
-source_paths = ["src/osm_wikidata_worldcover"]
+source_paths = ["src/osm_worldcover"]
 do_not_mutate = [
     "*/adapters/*",
     "*/cli.py",

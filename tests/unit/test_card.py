@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.domain.card import render
+from osm_worldcover.domain.card import render
 
 MANIFEST = {
     "counts": {
@@ -87,6 +87,26 @@ def test_card_names_the_source_and_pinned_revision() -> None:
     text = card()
     assert "NoeFlandre/osm-polygon-wikidata-and-wikipedia" in text
     assert "abc123" in text
+
+
+def test_card_uses_source_specific_metadata() -> None:
+    manifest = {
+        **MANIFEST,
+        "settings": {
+            **MANIFEST["settings"],
+            "source": "website",
+            "output_dataset": "NoeFlandre/osm-polygon-website-tag-worldcover",
+            "source_text_description": "text extracted from OSM-tagged websites",
+            "source_url": "https://huggingface.co/datasets/NoeFlandre/osm-polygon-website-tag",
+            "dataset_license": "other",
+            "text_license": "Third-party website text; source-site terms apply",
+        },
+    }
+    text = render(manifest)
+    assert "# osm-polygon-website-tag-worldcover" in text
+    assert 'load_dataset("NoeFlandre/osm-polygon-website-tag-worldcover")' in text
+    assert "OSM-tagged websites" in text
+    assert "source-site terms apply" in text
 
 
 def test_card_states_the_dominance_threshold() -> None:

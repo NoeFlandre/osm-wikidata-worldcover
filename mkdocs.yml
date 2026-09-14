@@ -1,6 +1,6 @@
-site_name: osm-wikidata-worldcover
-site_description: A supervised text to land-cover dataset built from OSM polygons and Wikipedia articles
-repo_url: https://github.com/NoeFlandre/osm-wikidata-worldcover
+site_name: osm-worldcover
+site_description: Supervised ESA WorldCover datasets built from OSM polygon text sources
+repo_url: https://github.com/NoeFlandre/osm-worldcover
 theme:
   name: material
   palette:
@@ -21,6 +21,8 @@ nav:
       - ADR 0002 Coverage relative to the polygon: adr/0002-coverage-relative-to-the-polygon.md
       - ADR 0003 Geographic splits via H3: adr/0003-geographic-splits-via-h3.md
       - ADR 0004 Streaming tiles: adr/0004-streaming-tiles.md
+      - ADR 0005 Polygon size cap: adr/0005-polygon-size-cap.md
+      - ADR 0006 Source recipes: adr/0006-source-recipes-and-generic-repository.md
 markdown_extensions:
   - admonition
   - tables

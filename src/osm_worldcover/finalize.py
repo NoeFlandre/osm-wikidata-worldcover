@@ -27,13 +27,13 @@ from typing import Any
 import pandas as pd
 import pyarrow.parquet as pq
 
-from osm_wikidata_worldcover.adapters.writer import write_batches, write_manifest
-from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.domain import manifest as manifest_module
-from osm_wikidata_worldcover.domain.manifest import DatasetCounts, GeographicCoverage
-from osm_wikidata_worldcover.domain.splits import SplitRatios, assign_cell, cell_for
-from osm_wikidata_worldcover.domain.text import dedup_key
-from osm_wikidata_worldcover.domain.validation import (
+from osm_worldcover.adapters.writer import write_batches, write_manifest
+from osm_worldcover.config import Config
+from osm_worldcover.domain import manifest as manifest_module
+from osm_worldcover.domain.manifest import DatasetCounts, GeographicCoverage
+from osm_worldcover.domain.splits import SplitRatios, assign_cell, cell_for
+from osm_worldcover.domain.text import dedup_key
+from osm_worldcover.domain.validation import (
     REQUIRED_COLUMNS,
     ValidationReport,
     validate,

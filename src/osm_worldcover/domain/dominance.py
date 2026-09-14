@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
-from osm_wikidata_worldcover.domain.nomenclature import is_valid_code
+from osm_worldcover.domain.nomenclature import is_valid_code
 
 __all__ = [
     "COVERAGE_TOLERANCE",

@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.domain.text import (
+from osm_worldcover.domain.text import (
     DEFAULT_MIN_WORDS,
     dedup_key,
     is_usable,

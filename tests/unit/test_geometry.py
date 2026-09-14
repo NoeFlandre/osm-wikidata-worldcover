@@ -6,7 +6,7 @@ import pytest
 from shapely import wkt
 from shapely.geometry import GeometryCollection, LineString, Point, Polygon
 
-from osm_wikidata_worldcover.domain.geometry import is_usable_polygon
+from osm_worldcover.domain.geometry import is_usable_polygon
 
 SQUARE = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 BOWTIE = wkt.loads("POLYGON ((0 0, 1 1, 1 0, 0 1, 0 0))")

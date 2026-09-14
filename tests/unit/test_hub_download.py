@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from osm_wikidata_worldcover.adapters import hub
+from osm_worldcover.adapters import hub
 
 
 class FakeInfo:
@@ -38,6 +38,22 @@ def test_list_region_stems_keeps_only_polygon_tables(monkeypatch) -> None:
         hub, "HfApi", lambda: type("A", (), {"list_repo_files": lambda *a, **k: files})()
     )
     assert hub.list_region_stems("repo", "rev") == ["alpha-latest", "beta-latest"]
+
+
+def test_list_region_stems_follows_the_description_data_prefix(monkeypatch) -> None:
+    files = [
+        "data/beta-latest.parquet",
+        "data/alpha-latest.parquet",
+        "language-v1/data/alpha-latest.parquet",
+        "README.md",
+    ]
+    monkeypatch.setattr(
+        hub, "HfApi", lambda: type("A", (), {"list_repo_files": lambda *a, **k: files})()
+    )
+    assert hub.list_region_stems("repo", "rev", source="description") == [
+        "alpha-latest",
+        "beta-latest",
+    ]
 
 
 def test_snapshot_region_downloads_every_table(tmp_path, monkeypatch) -> None:

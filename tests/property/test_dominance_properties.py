@@ -4,13 +4,13 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from osm_wikidata_worldcover.domain.dominance import (
+from osm_worldcover.domain.dominance import (
     OverlappingCoverageError,
     RejectionReason,
     class_fractions,
     decide,
 )
-from osm_wikidata_worldcover.domain.nomenclature import CLASS_LABELS, NODATA, is_valid_code
+from osm_worldcover.domain.nomenclature import CLASS_LABELS, NODATA, is_valid_code
 
 CODES = [*CLASS_LABELS, NODATA]
 

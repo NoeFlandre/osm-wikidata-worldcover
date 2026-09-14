@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from osm_wikidata_worldcover.build import ShardStore
+from osm_worldcover.build import ShardStore
 
 
 def frame(n: int = 2) -> pd.DataFrame:
@@ -53,9 +53,9 @@ class TestRunBuild:
     """Whole-build orchestration, with the network and rasters stubbed out."""
 
     def _patch(self, monkeypatch, tmp_path, stems, examples_per_region=1):
-        from osm_wikidata_worldcover import build as build_module
-        from osm_wikidata_worldcover.adapters.source import RegionTables
-        from osm_wikidata_worldcover.pipeline import RegionOutcome
+        from osm_worldcover import build as build_module
+        from osm_worldcover.adapters.source import RegionTables
+        from osm_worldcover.pipeline import RegionOutcome
 
         monkeypatch.setattr(build_module.hub, "resolve_revision", lambda *a, **k: "rev1")
         monkeypatch.setattr(build_module.hub, "list_region_stems", lambda *a, **k: stems)
@@ -96,7 +96,7 @@ class TestRunBuild:
         return build_module
 
     def test_every_region_contributes(self, tmp_path, monkeypatch) -> None:
-        from osm_wikidata_worldcover.config import Config
+        from osm_worldcover.config import Config
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
         report = module.run_build(Config(cache_dir=tmp_path, out_dir=tmp_path / "out"))
@@ -104,7 +104,7 @@ class TestRunBuild:
         assert len(report.regions) == 2
 
     def test_a_finished_region_is_skipped_on_a_rerun(self, tmp_path, monkeypatch) -> None:
-        from osm_wikidata_worldcover.config import Config
+        from osm_worldcover.config import Config
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
         config = Config(cache_dir=tmp_path, out_dir=tmp_path / "out")
@@ -114,7 +114,7 @@ class TestRunBuild:
         assert second.result.rows == 2  # but the data is still there
 
     def test_rejections_are_summed_across_regions(self, tmp_path, monkeypatch) -> None:
-        from osm_wikidata_worldcover.config import Config
+        from osm_worldcover.config import Config
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
         report = module.run_build(Config(cache_dir=tmp_path, out_dir=tmp_path / "out"))
@@ -123,7 +123,7 @@ class TestRunBuild:
         assert report.rejections == {"below_threshold": 4}
 
     def test_an_explicit_region_list_overrides_discovery(self, tmp_path, monkeypatch) -> None:
-        from osm_wikidata_worldcover.config import Config
+        from osm_worldcover.config import Config
 
         module = self._patch(monkeypatch, tmp_path, ["alpha", "beta"])
         report = module.run_build(
@@ -132,8 +132,8 @@ class TestRunBuild:
         assert [r.stem for r in report.regions] == ["alpha"]
 
     def test_a_pinned_revision_is_not_resolved_again(self, tmp_path, monkeypatch) -> None:
-        from osm_wikidata_worldcover import build as build_module
-        from osm_wikidata_worldcover.config import Config
+        from osm_worldcover import build as build_module
+        from osm_worldcover.config import Config
 
         self._patch(monkeypatch, tmp_path, ["alpha"])
 
@@ -155,8 +155,8 @@ def test_progress_is_reported_as_each_region_starts(tmp_path, monkeypatch) -> No
     A list comprehension over a pre-computed "pending" list printed all 386
     region names before any work began.
     """
-    from osm_wikidata_worldcover import build as build_module
-    from osm_wikidata_worldcover.config import Config
+    from osm_worldcover import build as build_module
+    from osm_worldcover.config import Config
 
     seen: list[str] = []
     helper = TestRunBuild()

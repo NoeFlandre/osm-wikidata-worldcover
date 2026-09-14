@@ -29,5 +29,5 @@ COPY README.md ./
 RUN uv sync --frozen --no-dev
 
 VOLUME /data
-ENTRYPOINT ["oww"]
+ENTRYPOINT ["owc"]
 CMD ["--help"]

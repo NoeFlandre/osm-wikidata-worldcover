@@ -7,8 +7,8 @@ pass reads shards one at a time and does the global work in DuckDB over files.
 import pandas as pd
 import pytest
 
-from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.finalize import _write_splits, finalize_shards
+from osm_worldcover.config import Config
+from osm_worldcover.finalize import _write_splits, finalize_shards
 
 
 def written(result) -> pd.DataFrame:
@@ -192,7 +192,7 @@ def test_split_writes_enable_large_arrow_string_buffers(tmp_path) -> None:
 
 def test_shards_are_never_all_held_in_memory(shards, tmp_path, monkeypatch) -> None:
     """Guard the property that matters: one shard is read at a time."""
-    import osm_wikidata_worldcover.finalize as module
+    import osm_worldcover.finalize as module
 
     live = 0
     peak = 0

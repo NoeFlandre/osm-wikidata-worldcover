@@ -13,12 +13,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from osm_wikidata_worldcover.adapters import hub
-from osm_wikidata_worldcover.adapters.source import RegionTables
-from osm_wikidata_worldcover.adapters.worldcover import WorldCoverTiles
-from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.finalize import StreamedBuild, finalize_shards
-from osm_wikidata_worldcover.pipeline import RegionOutcome, run_region
+from osm_worldcover.adapters import hub
+from osm_worldcover.adapters.source import RegionTables
+from osm_worldcover.adapters.worldcover import WorldCoverTiles
+from osm_worldcover.config import Config
+from osm_worldcover.finalize import StreamedBuild, finalize_shards
+from osm_worldcover.pipeline import RegionOutcome, run_region
+from osm_worldcover.sources import DEFAULT_SOURCE, SourceRecipe
 
 __all__ = ["BuildReport", "ShardStore", "run_build"]
 
@@ -87,7 +88,9 @@ def run_build(
     config = config.with_overrides(source_revision=revision)
 
     stems = list(
-        regions or config.regions or hub.list_region_stems(config.source_dataset, revision)
+        regions
+        or config.regions
+        or hub.list_region_stems(config.source_dataset, revision, config.source_recipe)
     )
     tiles = WorldCoverTiles(
         Path(config.cache_dir) / "worldcover",
@@ -162,11 +165,14 @@ def _process_region(
     progress: Progress,
 ) -> RegionOutcome:
     """Fetch, label and record one region."""
-    hub.snapshot_region(config.source_dataset, revision, stem, raw)
-    tables = RegionTables.load(raw, stem)
+    hub.snapshot_region(config.source_dataset, revision, stem, raw, config.source_recipe)
+    if config.source == DEFAULT_SOURCE:
+        tables = RegionTables.load(raw, stem)
+    else:
+        tables = RegionTables.load(raw, stem, config.source_recipe)
     examples, outcome = run_region(config, tables, tiles, keep_tiles=keep_tiles)
     shards.write(stem, examples)
-    _release_source(raw, stem)
+    _release_source(raw, stem, config.source_recipe)
     progress(
         f"    {outcome.polygons_seen} polygons -> "
         f"{outcome.polygons_accepted} labelled -> {outcome.examples} examples"
@@ -174,10 +180,13 @@ def _process_region(
     return outcome
 
 
-def _release_source(raw: Path, stem: str) -> None:
+def _release_source(raw: Path, stem: str, source: SourceRecipe) -> None:
     """Delete a region's downloaded tables once its shard is written.
 
     The full source snapshot is ~21 GB and none of it is needed again.
     """
-    for path in hub.region_files(stem):
+    paths = (
+        hub.region_files(stem) if source.name == DEFAULT_SOURCE else hub.region_files(stem, source)
+    )
+    for path in paths:
         (raw / path).unlink(missing_ok=True)

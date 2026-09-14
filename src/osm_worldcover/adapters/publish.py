@@ -10,9 +10,9 @@ from pathlib import Path
 
 from huggingface_hub import HfApi
 
-from osm_wikidata_worldcover.adapters.coverage_map import MAP_FILENAME, write_coverage_map
-from osm_wikidata_worldcover.domain.card import render
-from osm_wikidata_worldcover.domain.manifest import SPLIT_ORDER
+from osm_worldcover.adapters.coverage_map import MAP_FILENAME, write_coverage_map
+from osm_worldcover.domain.card import render
+from osm_worldcover.domain.manifest import SPLIT_ORDER
 
 __all__ = ["files_to_publish", "publish_dataset"]
 
@@ -55,6 +55,6 @@ def publish_dataset(
         folder_path=str(build_dir),
         repo_id=repo_id,
         repo_type="dataset",
-        commit_message="Publish osm-wikidata-worldcover build",
+        commit_message=f"Publish {repo_id} WorldCover build",
     )
     return f"https://huggingface.co/datasets/{repo_id}"

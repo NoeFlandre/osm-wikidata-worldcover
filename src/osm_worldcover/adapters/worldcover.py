@@ -26,7 +26,7 @@ import rasterio
 import shapely
 from exactextract import exact_extract
 
-from osm_wikidata_worldcover.domain.tiling import Tile
+from osm_worldcover.domain.tiling import Tile
 
 __all__ = [
     "DEFAULT_BASE_URL",

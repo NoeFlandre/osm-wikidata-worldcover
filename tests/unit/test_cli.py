@@ -5,9 +5,9 @@ import json
 import pandas as pd
 from typer.testing import CliRunner
 
-from osm_wikidata_worldcover import cli
-from osm_wikidata_worldcover.domain.validation import Check, ValidationReport, Violation
-from osm_wikidata_worldcover.finalize import StreamedBuild
+from osm_worldcover import cli
+from osm_worldcover.domain.validation import Check, ValidationReport, Violation
+from osm_worldcover.finalize import StreamedBuild
 
 runner = CliRunner()
 

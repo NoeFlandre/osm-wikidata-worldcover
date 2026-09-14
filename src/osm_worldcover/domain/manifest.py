@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from osm_wikidata_worldcover.domain.nomenclature import label_for
+from osm_worldcover.domain.nomenclature import label_for
 
 __all__ = ["DatasetCounts", "GeographicCoverage", "build"]
 

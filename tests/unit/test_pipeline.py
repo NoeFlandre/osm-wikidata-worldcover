@@ -3,10 +3,10 @@
 import pandas as pd
 import pytest
 
-from osm_wikidata_worldcover.adapters.source import RegionTables
-from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.domain.tiling import Tile
-from osm_wikidata_worldcover.pipeline import (
+from osm_worldcover.adapters.source import RegionTables
+from osm_worldcover.config import Config
+from osm_worldcover.domain.tiling import Tile
+from osm_worldcover.pipeline import (
     RegionOutcome,
     label_polygons,
     prepare_polygons,

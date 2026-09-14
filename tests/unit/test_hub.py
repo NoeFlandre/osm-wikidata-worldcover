@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.adapters.hub import region_files, split_repo_path
+from osm_worldcover.adapters.hub import region_files, split_repo_path
 
 
 def test_region_files_lists_every_table_for_a_region() -> None:
@@ -16,6 +16,14 @@ def test_region_files_lists_every_table_for_a_region() -> None:
 
 def test_region_files_is_deterministic() -> None:
     assert region_files("a") == region_files("a")
+
+
+def test_region_files_follow_the_description_recipe() -> None:
+    assert region_files("a", source="description") == ["data/a.parquet"]
+
+
+def test_region_files_follow_the_website_recipe() -> None:
+    assert region_files("a", source="website") == ["polygons/a.parquet"]
 
 
 @pytest.mark.parametrize(

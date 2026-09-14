@@ -7,8 +7,8 @@ import duckdb
 import geopandas as gpd
 import pandas as pd
 
-from osm_wikidata_worldcover.domain.manifest import SPLIT_ORDER
-from osm_wikidata_worldcover.domain.nomenclature import CLASS_LABELS
+from osm_worldcover.domain.manifest import SPLIT_ORDER
+from osm_worldcover.domain.nomenclature import CLASS_LABELS
 
 __all__ = [
     "CLASS_COLORS",

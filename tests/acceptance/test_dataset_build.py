@@ -10,11 +10,11 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from shapely.geometry import Polygon
 from tests.conftest import write_raster
 
-from osm_wikidata_worldcover.adapters.source import RegionTables
-from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.domain.nomenclature import is_valid_code
-from osm_wikidata_worldcover.finalize import StreamedBuild, finalize_shards
-from osm_wikidata_worldcover.pipeline import RegionOutcome, run_region
+from osm_worldcover.adapters.source import RegionTables
+from osm_worldcover.config import Config
+from osm_worldcover.domain.nomenclature import is_valid_code
+from osm_worldcover.finalize import StreamedBuild, finalize_shards
+from osm_worldcover.pipeline import RegionOutcome, run_region
 
 scenarios("features/dataset_build.feature")
 

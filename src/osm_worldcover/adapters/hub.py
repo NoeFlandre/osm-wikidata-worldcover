@@ -10,7 +10,7 @@ from pathlib import Path
 from huggingface_hub import HfApi, hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
 
-from osm_wikidata_worldcover.adapters.source import PROJECTS
+from osm_worldcover.sources import DEFAULT_SOURCE, SourceRecipe, recipe_for
 
 __all__ = [
     "list_region_stems",
@@ -21,13 +21,10 @@ __all__ = [
 ]
 
 
-def region_files(stem: str) -> list[str]:
+def region_files(stem: str, source: str | SourceRecipe = DEFAULT_SOURCE) -> list[str]:
     """Return every repository path holding data for region ``stem``."""
-    return [
-        f"polygons/{stem}.parquet",
-        f"polygon_document_links/{stem}.parquet",
-        *[f"{project}/documents/{stem}.parquet" for project in PROJECTS],
-    ]
+    recipe = source if isinstance(source, SourceRecipe) else recipe_for(source)
+    return list(recipe.region_paths(stem))
 
 
 def split_repo_path(path: str) -> tuple[str, str]:
@@ -44,22 +41,33 @@ def resolve_revision(repo_id: str, revision: str | None = None) -> str:
     return info.sha
 
 
-def list_region_stems(repo_id: str, revision: str) -> list[str]:
+def list_region_stems(
+    repo_id: str, revision: str, source: str | SourceRecipe = DEFAULT_SOURCE
+) -> list[str]:
     """Return every region present in the repository, sorted."""
+    recipe = source if isinstance(source, SourceRecipe) else recipe_for(source)
     files = HfApi().list_repo_files(repo_id, repo_type="dataset", revision=revision)
     return sorted(
-        split_repo_path(f)[1] for f in files if f.startswith("polygons/") and f.endswith(".parquet")
+        split_repo_path(f)[1]
+        for f in files
+        if f.startswith(recipe.region_prefix) and f.endswith(".parquet")
     )
 
 
-def snapshot_region(repo_id: str, revision: str, stem: str, dest: Path) -> list[Path]:
+def snapshot_region(
+    repo_id: str,
+    revision: str,
+    stem: str,
+    dest: Path,
+    source: str | SourceRecipe = DEFAULT_SOURCE,
+) -> list[Path]:
     """Download region ``stem`` into ``dest``, mirroring the repository layout.
 
     Files the repository does not publish for this region -- Wikivoyage sidecars
     most often -- are skipped rather than treated as failures.
     """
     downloaded: list[Path] = []
-    for path in region_files(stem):
+    for path in region_files(stem, source):
         try:
             local = hf_hub_download(
                 repo_id,

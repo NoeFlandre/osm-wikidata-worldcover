@@ -23,9 +23,9 @@ pixels) as a named config alongside the full dataset.
 
 ## Built-up dominates the class distribution
 
-Wikipedia-linked polygons are overwhelmingly buildings and settlements, so
-`Built-up` swamps the other ten classes. On the Luxembourg smoke build it was
-80.5% of rows.
+Wikidata-linked polygons are overwhelmingly buildings and settlements, so
+`Built-up` can swamp the other ten classes. The balance is source-dependent;
+description and website recipes should be reported separately.
 
 *Why it exists:* a property of what people write encyclopaedia articles about,
 compounded by WorldCover collapsing all settlement into one class (ADR 0001).
@@ -46,10 +46,10 @@ instead of at full resolution. `exactextract` does not expose overview
 selection, so this needs a second, decimated code path — worth it only if
 those 1,099 rows are wanted.
 
-## Articles describing several distant places lose rows
+## Documents describing several distant places lose rows
 
-One article can describe many places — a river, a mountain range, a chain of
-monuments. Those polygons fall in different H3 cells and therefore different
+One source document can describe many places — a river, a mountain range, a
+chain of monuments. Those polygons fall in different H3 cells and therefore different
 splits, so the document would appear in train *and* test.
 
 *Why it exists:* the alternative is moving every row of that document into one

@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from osm_wikidata_worldcover.adapters import worldcover as wc
-from osm_wikidata_worldcover.adapters.worldcover import WorldCoverTiles
-from osm_wikidata_worldcover.domain.tiling import Tile
+from osm_worldcover.adapters import worldcover as wc
+from osm_worldcover.adapters.worldcover import WorldCoverTiles
+from osm_worldcover.domain.tiling import Tile
 
 
 @pytest.fixture

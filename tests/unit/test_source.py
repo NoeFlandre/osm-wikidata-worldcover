@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from osm_wikidata_worldcover.adapters.source import (
+from osm_worldcover.adapters.source import (
     RegionTables,
     load_documents,
     load_links,

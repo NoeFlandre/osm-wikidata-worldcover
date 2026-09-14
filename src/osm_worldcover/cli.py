@@ -6,16 +6,20 @@ from typing import Annotated
 
 import typer
 
-from osm_wikidata_worldcover.adapters.writer import read_manifest
-from osm_wikidata_worldcover.build import run_build
-from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.finalize import StreamedBuild, finalize_shards
+from osm_worldcover.adapters.writer import read_manifest
+from osm_worldcover.build import run_build
+from osm_worldcover.config import Config
+from osm_worldcover.finalize import StreamedBuild, finalize_shards
+from osm_worldcover.sources import DEFAULT_SOURCE
 
 app = typer.Typer(add_completion=False, help=__doc__)
 
 
 @app.command()
 def build(
+    source: Annotated[
+        str, typer.Option(help="Named input source: wikidata, description, or website.")
+    ] = DEFAULT_SOURCE,
     out: Annotated[Path, typer.Option(help="Directory to write the dataset into.")] = Path(
         "data/out"
     ),
@@ -47,7 +51,7 @@ def build(
 ) -> None:
     """Build the dataset and write it to disk."""
     config = _build_config(
-        out, cache, threshold, max_area_km2, cached_tiles, revision, dataset_version
+        source, out, cache, threshold, max_area_km2, cached_tiles, revision, dataset_version
     )
     regions = list(region or []) + _read_regions(regions_file)
     report = run_build(config, regions=regions or None, keep_tiles=keep_tiles, progress=typer.echo)
@@ -70,6 +74,9 @@ def assemble(
     out: Annotated[Path, typer.Option(help="Directory to write the dataset into.")] = Path(
         "data/out"
     ),
+    source: Annotated[
+        str, typer.Option(help="Named input source: wikidata, description, or website.")
+    ] = DEFAULT_SOURCE,
     work: Annotated[Path, typer.Option(help="Scratch directory for assembly.")] = Path(
         "data/cache/assembly"
     ),
@@ -83,6 +90,7 @@ def assemble(
     own shards -- can be assembled once, in one place.
     """
     config = Config(
+        source=source,
         out_dir=out,
         threshold=threshold,
         source_revision=revision,
@@ -96,6 +104,7 @@ def assemble(
 
 
 def _build_config(
+    source: str,
     out: Path,
     cache: Path,
     threshold: float,
@@ -106,6 +115,7 @@ def _build_config(
 ) -> Config:
     """Gather the CLI's options into one settings object."""
     return Config(
+        source=source,
         out_dir=out,
         cache_dir=cache,
         threshold=threshold,
@@ -155,7 +165,7 @@ def verify(
     threshold: Annotated[float, typer.Option()] = 0.8,
 ) -> None:
     """Re-check a build on disk against every dataset guarantee."""
-    from osm_wikidata_worldcover.domain.validation import validate
+    from osm_worldcover.domain.validation import validate
 
     rows = _load_splits(build_dir)
     if rows is None:
@@ -192,7 +202,7 @@ def publish(
     private: Annotated[bool, typer.Option(help="Create the dataset private.")] = False,
 ) -> None:
     """Upload a build to the Hugging Face Hub with a generated dataset card."""
-    from osm_wikidata_worldcover.adapters.publish import publish_dataset
+    from osm_worldcover.adapters.publish import publish_dataset
 
     url = publish_dataset(build_dir, repo_id, private=private)
     typer.echo(f"published: {url}")

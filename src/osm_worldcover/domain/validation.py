@@ -14,10 +14,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from osm_wikidata_worldcover.domain.dominance import DEFAULT_THRESHOLD
-from osm_wikidata_worldcover.domain.nomenclature import CLASS_LABELS
-from osm_wikidata_worldcover.domain.splits import Split
-from osm_wikidata_worldcover.domain.text import DEFAULT_MIN_WORDS, dedup_key, is_usable
+from osm_worldcover.domain.dominance import DEFAULT_THRESHOLD
+from osm_worldcover.domain.nomenclature import CLASS_LABELS
+from osm_worldcover.domain.splits import Split
+from osm_worldcover.domain.text import DEFAULT_MIN_WORDS, dedup_key, is_usable
 
 __all__ = ["REQUIRED_COLUMNS", "Check", "ValidationReport", "Violation", "validate"]
 

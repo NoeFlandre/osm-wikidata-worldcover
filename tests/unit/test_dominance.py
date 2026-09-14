@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.domain.dominance import (
+from osm_worldcover.domain.dominance import (
     COVERAGE_TOLERANCE,
     DEFAULT_THRESHOLD,
     OverlappingCoverageError,

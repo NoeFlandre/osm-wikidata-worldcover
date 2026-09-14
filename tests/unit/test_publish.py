@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from osm_wikidata_worldcover.adapters.coverage_map import MAP_FILENAME
-from osm_wikidata_worldcover.adapters.publish import files_to_publish, publish_dataset
+from osm_worldcover.adapters.coverage_map import MAP_FILENAME
+from osm_worldcover.adapters.publish import files_to_publish, publish_dataset
 
 MANIFEST = {
     "counts": {
@@ -66,8 +66,8 @@ def test_publish_writes_a_card_and_uploads_every_file(build, monkeypatch) -> Non
             uploaded["folder"] = kwargs["folder_path"]
             uploaded["repo_type"] = kwargs["repo_type"]
 
-    monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.HfApi", FakeApi)
-    monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map)
+    monkeypatch.setattr("osm_worldcover.adapters.publish.HfApi", FakeApi)
+    monkeypatch.setattr("osm_worldcover.adapters.publish.write_coverage_map", fake_map)
     url = publish_dataset(build, "someone/thing")
 
     assert uploaded["repo"] == "someone/thing"
@@ -98,8 +98,8 @@ def test_publish_defaults_to_a_public_dataset(build, monkeypatch) -> None:
         def upload_folder(self, **kwargs):
             return None
 
-    monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.HfApi", FakeApi)
-    monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map)
+    monkeypatch.setattr("osm_worldcover.adapters.publish.HfApi", FakeApi)
+    monkeypatch.setattr("osm_worldcover.adapters.publish.write_coverage_map", fake_map)
     publish_dataset(build, "someone/thing")
     assert seen["private"] is False
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.domain.validation import REQUIRED_COLUMNS, Check, validate
+from osm_worldcover.domain.validation import REQUIRED_COLUMNS, Check, validate
 
 
 def row(**over: object) -> dict[str, object]:
@@ -120,7 +120,7 @@ def test_reported_examples_name_the_offending_polygons() -> None:
 
 
 def test_an_inverted_bbox_error_names_the_problem() -> None:
-    from osm_wikidata_worldcover.domain.tiling import tiles_for_bbox
+    from osm_worldcover.domain.tiling import tiles_for_bbox
 
     with pytest.raises(ValueError, match="inverted bbox"):
         tiles_for_bbox((9.0, 48.0, 6.0, 51.0))

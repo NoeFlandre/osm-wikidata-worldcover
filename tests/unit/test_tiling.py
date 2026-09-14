@@ -2,7 +2,7 @@
 
 import pytest
 
-from osm_wikidata_worldcover.domain.tiling import (
+from osm_worldcover.domain.tiling import (
     TILE_DEGREES,
     tile_bounds,
     tile_for,

@@ -12,12 +12,12 @@
 
 ## File map
 
-- Create `src/osm_wikidata_worldcover/adapters/coverage_map.py`: release-Parquet centroid aggregation, validation, Natural Earth loading, and PNG rendering.
-- Modify `src/osm_wikidata_worldcover/domain/card.py`: add the static map section and explain that points are centroids, not polygon outlines.
-- Modify `src/osm_wikidata_worldcover/domain/card.py`: add the static map section and the representative polygon/class examples table.
-- Modify `src/osm_wikidata_worldcover/domain/manifest.py` and `src/osm_wikidata_worldcover/finalize.py`: record deterministic named examples from the exact kept rows.
-- Modify `src/osm_wikidata_worldcover/adapters/publish.py`: generate `worldcover_centroids.png` before regenerating the README and uploading the build folder.
-- Modify `src/osm_wikidata_worldcover/adapters/writer.py`: emit Viewer-safe Parquet row groups with page indexes for future builds.
+- Create `src/osm_worldcover/adapters/coverage_map.py`: release-Parquet centroid aggregation, validation, Natural Earth loading, and PNG rendering.
+- Modify `src/osm_worldcover/domain/card.py`: add the static map section and explain that points are centroids, not polygon outlines.
+- Modify `src/osm_worldcover/domain/card.py`: add the static map section and the representative polygon/class examples table.
+- Modify `src/osm_worldcover/domain/manifest.py` and `src/osm_worldcover/finalize.py`: record deterministic named examples from the exact kept rows.
+- Modify `src/osm_worldcover/adapters/publish.py`: generate `worldcover_centroids.png` before regenerating the README and uploading the build folder.
+- Modify `src/osm_worldcover/adapters/writer.py`: emit Viewer-safe Parquet row groups with page indexes for future builds.
 - Modify `pyproject.toml` and `uv.lock`: add Matplotlib as the runtime renderer dependency.
 - Create `tests/unit/test_coverage_map.py`: local Parquet aggregation, validation, deterministic palette, and isolated PNG rendering tests.
 - Modify `tests/unit/test_card.py`: assert the map link and centroid wording.
@@ -196,7 +196,7 @@ Expected: collection or assertion failures because the adapter functions and car
 **Files:**
 - Modify: `pyproject.toml`
 - Modify: `uv.lock`
-- Create: `src/osm_wikidata_worldcover/adapters/coverage_map.py`
+- Create: `src/osm_worldcover/adapters/coverage_map.py`
 
 - [ ] **Step 1: Add Matplotlib to the runtime dependencies.**
 
@@ -272,8 +272,8 @@ PNG tests pass without downloading Natural Earth.
 Run:
 
 ```bash
-TMPDIR="$PWD/data/scratch/map-checks" UV_CACHE_DIR="$PWD/data/cache/uv" UV_LINK_MODE=copy uv run --no-sync ruff check src/osm_wikidata_worldcover/adapters/coverage_map.py tests/unit/test_coverage_map.py
-TMPDIR="$PWD/data/scratch/map-checks" UV_CACHE_DIR="$PWD/data/cache/uv" UV_LINK_MODE=copy uv run --no-sync ty check src/osm_wikidata_worldcover/adapters/coverage_map.py
+TMPDIR="$PWD/data/scratch/map-checks" UV_CACHE_DIR="$PWD/data/cache/uv" UV_LINK_MODE=copy uv run --no-sync ruff check src/osm_worldcover/adapters/coverage_map.py tests/unit/test_coverage_map.py
+TMPDIR="$PWD/data/scratch/map-checks" UV_CACHE_DIR="$PWD/data/cache/uv" UV_LINK_MODE=copy uv run --no-sync ty check src/osm_worldcover/adapters/coverage_map.py
 ```
 
 Expected: both commands exit successfully.
@@ -290,14 +290,14 @@ Dataset Viewer's scan-size limit.
 ## Task 3: Add the card section and publisher integration
 
 **Files:**
-- Modify: `src/osm_wikidata_worldcover/domain/card.py`
-- Modify: `src/osm_wikidata_worldcover/adapters/publish.py`
+- Modify: `src/osm_worldcover/domain/card.py`
+- Modify: `src/osm_worldcover/adapters/publish.py`
 - Modify: `tests/unit/test_card.py`
 - Modify: `tests/unit/test_publish.py`
 
 - [ ] **Step 1: Make the publisher test observe map generation.**
 
-Patch `osm_wikidata_worldcover.adapters.publish.write_coverage_map` with a
+Patch `osm_worldcover.adapters.publish.write_coverage_map` with a
 local fake that writes a PNG signature to the requested path and returns `1`.
 Assert `publish_dataset()` calls it with the build directory and
 `build_dir / MAP_FILENAME`, then assert the generated README still contains
@@ -311,7 +311,7 @@ def fake_map(build_dir: Path, output_path: Path, **_: object) -> int:
     return 1
 
 
-monkeypatch.setattr("osm_wikidata_worldcover.adapters.publish.write_coverage_map", fake_map)
+monkeypatch.setattr("osm_worldcover.adapters.publish.write_coverage_map", fake_map)
 ```
 
 - [ ] **Step 2: Run the publisher test to confirm the new integration assertion fails.**
@@ -375,7 +375,7 @@ Expected: all tests pass, including the map link and publisher call.
 Run:
 
 ```bash
-git add pyproject.toml uv.lock src/osm_wikidata_worldcover/adapters/coverage_map.py src/osm_wikidata_worldcover/adapters/publish.py src/osm_wikidata_worldcover/domain/card.py tests/unit/test_coverage_map.py tests/unit/test_publish.py tests/unit/test_card.py docs/superpowers/plans/2026-09-14-worldcover-centroid-map.md
+git add pyproject.toml uv.lock src/osm_worldcover/adapters/coverage_map.py src/osm_worldcover/adapters/publish.py src/osm_worldcover/domain/card.py tests/unit/test_coverage_map.py tests/unit/test_publish.py tests/unit/test_card.py docs/superpowers/plans/2026-09-14-worldcover-centroid-map.md
 git commit -m "feat: add worldcover centroid coverage map"
 ```
 
@@ -398,7 +398,7 @@ HF_HOME="$PWD/data/cache/hf" \
 UV_CACHE_DIR="$PWD/data/cache/uv" \
 UV_LINK_MODE=copy \
 HF_HUB_DISABLE_PROGRESS_BARS=1 \
-uv run oww publish data/out/v1.0.0 NoeFlandre/osm-wikidata-worldcover
+uv run owc publish data/out/v1.0.0 NoeFlandre/osm-wikidata-worldcover
 ```
 
 Expected: the command writes a non-empty PNG, rewrites the card with the image

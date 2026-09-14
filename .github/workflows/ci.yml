@@ -70,6 +70,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t osm-wikidata-worldcover .
+        run: docker build -t osm-worldcover .
       - name: Image runs
-        run: docker run --rm osm-wikidata-worldcover --help
+        run: docker run --rm osm-worldcover --help

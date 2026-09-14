@@ -4,8 +4,8 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from osm_wikidata_worldcover.adapters.worldcover import WorldCoverTiles, class_coverage
-from osm_wikidata_worldcover.domain.tiling import Tile
+from osm_worldcover.adapters.worldcover import WorldCoverTiles, class_coverage
+from osm_worldcover.domain.tiling import Tile
 
 
 def one(geom) -> gpd.GeoDataFrame:

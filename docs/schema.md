@@ -1,6 +1,7 @@
 # Dataset schema
 
-One row per `(polygon, document)` pair.
+One row per `(polygon, source text)` pair. The same published schema is used for
+Wikidata-linked documents, OSM `description` tags, and fetched website text.
 
 ## Label
 
@@ -15,12 +16,12 @@ One row per `(polygon, document)` pair.
 
 | column | type | meaning |
 | --- | --- | --- |
-| `text` | str | Full article text, whitespace-normalised |
-| `lead_text` | str | Article lead paragraph |
-| `title` | str | Article title |
-| `url` | str | Article URL |
-| `language` | str | Article language code |
-| `project` | str | `wikipedia` or `wikivoyage` |
+| `text` | str | Full source text, whitespace-normalised |
+| `lead_text` | str | Article lead paragraph, when available |
+| `title` | str | Article or OSM object name |
+| `url` | str | Source URL, when available |
+| `language` | str | Source language code, when available |
+| `project` | str | `wikipedia`, `wikivoyage`, `description`, `website`, or `contact_website` |
 | `text_words` | int | Whitespace-separated token count |
 | `document_id` | str | Stable document identity |
 
@@ -28,10 +29,10 @@ One row per `(polygon, document)` pair.
 
 | column | type | meaning |
 | --- | --- | --- |
-| `polygon_id` | str | `<region>:<osm_type>:<osm_id>` |
+| `polygon_id` | str | Stable source polygon identity |
 | `osm_type`, `osm_id` | str, int | The OSM object |
 | `name` | str | OSM name tag |
-| `wikidata` | str | Wikidata QID, where present |
+| `wikidata` | str | Wikidata QID, where present; null for other recipes |
 | `lat`, `lon` | float | Polygon centroid |
 | `centroid_wkt` | str | Centroid as WKT POINT |
 | `polygon_area_m2` | float | Polygon area |
