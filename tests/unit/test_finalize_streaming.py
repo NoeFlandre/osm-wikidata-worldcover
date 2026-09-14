@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from osm_wikidata_worldcover.config import Config
-from osm_wikidata_worldcover.finalize import finalize_shards
+from osm_wikidata_worldcover.finalize import _write_splits, finalize_shards
 
 
 def written(result) -> pd.DataFrame:
@@ -158,6 +158,26 @@ def test_reused_work_dir_does_not_retain_old_enriched_rows(shards, tmp_path) -> 
     result = finalize_shards(shards, Config(), work, work / "out")
 
     assert result.rows == 2
+
+
+def test_split_writes_enable_large_arrow_string_buffers(tmp_path) -> None:
+    import duckdb
+
+    connection = duckdb.connect()
+    try:
+        connection.execute(
+            "CREATE TEMP TABLE kept AS "
+            "SELECT * FROM (VALUES ('train', 'p1', 'd1')) "
+            "AS rows(split, polygon_id, document_id)"
+        )
+
+        paths, rows = _write_splits(connection, tmp_path)
+
+        assert rows == 1
+        assert connection.execute("SELECT current_setting('arrow_large_buffer_size')").fetchone()[0]
+        assert {path.stem for path in paths} == {"train", "validation", "test"}
+    finally:
+        connection.close()
 
 
 def test_shards_are_never_all_held_in_memory(shards, tmp_path, monkeypatch) -> None:

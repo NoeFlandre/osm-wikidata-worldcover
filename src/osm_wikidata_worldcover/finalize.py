@@ -226,6 +226,7 @@ def _write_splits(connection: Any, target: Path) -> tuple[list[Path], int]:
     """Stream each split from DuckDB into its own Parquet file."""
     paths: list[Path] = []
     rows = 0
+    connection.execute("SET arrow_large_buffer_size = true")
     for split in manifest_module.SPLIT_ORDER:
         path = target / f"{split}.parquet"
         reader = connection.execute(
