@@ -2,6 +2,28 @@
 
 Recorded deliberately, with why each exists and how it would be cleaned up.
 
+## The one-off parallel release helper is retired
+
+The temporary `scripts/parallel_release.py` used while preparing the
+description-tag release is not part of the tracked repository after PR #5.
+It hard-coded one source revision and output root, duplicated the tested CLI
+workflow, and its shard-combining step was not safe to rerun. Region discovery,
+split builds, and assembly now have supported paths:
+
+```bash
+uv run owc regions --source description --revision "$SOURCE_REVISION" > regions.txt
+uv run owc build --source description --regions-file regions-a.txt --cache data/w0 --out data/w0/out
+uv run owc assemble data/w0/shards data/w1/shards --source description --out data/out
+```
+
+The retained ignored release scratch at
+`data/releases/description/parallel` is recovery evidence, not repository
+source. Keep it while a resume, verification, or publication check may still
+depend on it. A later cleanup may remove it only after the public release has
+been independently verified and no release worker is active; this issue does
+not delete that scratch or any published files. A stale local copy of the old
+helper likewise needs explicit local cleanup outside this worktree.
+
 ## The label describes the place, not the feature
 
 A 10 m pixel is 100 m². Polygons below that — 7.6% of the source — are smaller
