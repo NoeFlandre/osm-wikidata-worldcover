@@ -41,7 +41,11 @@ def render(manifest: Mapping[str, Any]) -> str:
                 "Languages (top 15)",
                 ("language", "examples", "share"),
                 [
-                    (row["language"], f"{row['examples']:,}", f"{row['share'] * 100:.1f}%")
+                    (
+                        row["language"] or "(unspecified)",
+                        f"{row['examples']:,}",
+                        f"{row['share'] * 100:.1f}%",
+                    )
                     for row in manifest.get("language_distribution", [])[:15]
                 ],
             ),
@@ -93,8 +97,9 @@ def _intro(counts: Mapping[str, Any], threshold_pct: int, settings: Mapping[str,
     total = counts["examples"]["total"]
     output_dataset = settings.get("output_dataset", "NoeFlandre/osm-wikidata-worldcover")
     title = str(output_dataset).rsplit("/", 1)[-1]
+    # Used verbatim: every recipe phrases this to read after "pairs", and
+    # lowercasing the first letter mangled names like OpenStreetMap.
     source_text = str(settings.get("source_text_description", "a Wikipedia or Wikivoyage article"))
-    source_text = source_text[:1].lower() + source_text[1:]
     return f"""
 # {title}
 

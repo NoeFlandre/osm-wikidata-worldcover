@@ -1,10 +1,15 @@
 """Dataset card rendering."""
 
+from typing import Any
+
 import pytest
 
 from osm_worldcover.domain.card import render
 
-MANIFEST = {
+# A manifest is JSON-shaped, so its values are heterogeneous by nature;
+# annotating it says so instead of letting inference build a union that
+# cannot be splatted.
+MANIFEST: dict[str, Any] = {
     "counts": {
         "examples": {"train": 800, "validation": 100, "test": 100, "total": 1000},
         "polygons": {"train": 400, "validation": 50, "test": 50, "total": 500},
@@ -135,3 +140,35 @@ def test_card_handles_an_empty_class_distribution() -> None:
 def test_card_requires_a_manifest_with_counts() -> None:
     with pytest.raises(KeyError):
         render({})
+
+
+def test_card_names_an_unspecified_language_rather_than_printing_none() -> None:
+    """A null language is real (an OSM description tag has none); "None" is not."""
+    manifest = {
+        **MANIFEST,
+        "language_distribution": [
+            {"language": None, "examples": 900, "share": 0.9},
+            {"language": "en", "examples": 100, "share": 0.1},
+        ],
+    }
+    text = render(manifest)
+    assert "unspecified" in text
+    assert "| None |" not in text
+
+
+def test_card_does_not_lowercase_a_proper_noun_in_the_source_description() -> None:
+    """Regression: "OpenStreetMap" was published as "openStreetMap".
+
+    The first letter was lowercased so the phrase would read mid-sentence,
+    which is wrong for every source whose description opens with a name.
+    """
+    manifest = {
+        **MANIFEST,
+        "settings": {
+            **MANIFEST["settings"],
+            "source_text_description": "OpenStreetMap description tag text",
+        },
+    }
+    text = render(manifest)
+    assert "OpenStreetMap description tag text" in text
+    assert "openStreetMap" not in text

@@ -174,3 +174,49 @@ def test_progress_is_reported_as_each_region_starts(tmp_path, monkeypatch) -> No
     assert seen.index("processing alpha") < next(
         i for i, line in enumerate(seen) if line.startswith("[2/2] beta")
     )
+
+
+class TestRejectionsSurviveTheProcess:
+    """Why polygons were refused must outlive the process that refused them.
+
+    Regression: rejection counters lived only in the build's memory, so a run
+    split across worker processes -- or one whose assembly crashed -- published
+    a manifest claiming no polygon was ever refused.
+    """
+
+    def test_a_region_records_why_its_polygons_were_refused(self, tmp_path) -> None:
+        from osm_worldcover.build import ShardStore
+
+        store = ShardStore(tmp_path)
+        store.write("alpha", frame(2), rejections={"below_threshold": 7})
+        assert store.rejections() == {"below_threshold": 7}
+
+    def test_counters_sum_across_regions(self, tmp_path) -> None:
+        from osm_worldcover.build import ShardStore
+
+        store = ShardStore(tmp_path)
+        store.write("alpha", frame(1), rejections={"below_threshold": 3, "too_large": 1})
+        store.write("beta", frame(1), rejections={"below_threshold": 4})
+        assert store.rejections() == {"below_threshold": 7, "too_large": 1}
+
+    def test_a_region_that_refused_nothing_contributes_nothing(self, tmp_path) -> None:
+        from osm_worldcover.build import ShardStore
+
+        store = ShardStore(tmp_path)
+        store.write("alpha", frame(1), rejections={})
+        assert store.rejections() == {}
+
+    def test_counters_are_readable_from_a_fresh_store(self, tmp_path) -> None:
+        """A later process must see what an earlier one recorded."""
+        from osm_worldcover.build import ShardStore
+
+        ShardStore(tmp_path).write("alpha", frame(1), rejections={"no_valid_class": 2})
+        assert ShardStore(tmp_path).rejections() == {"no_valid_class": 2}
+
+    def test_shards_without_counters_are_tolerated(self, tmp_path) -> None:
+        """Shards built before counters were recorded must still assemble."""
+        from osm_worldcover.build import ShardStore
+
+        store = ShardStore(tmp_path)
+        store.write("alpha", frame(1))
+        assert store.rejections() == {}

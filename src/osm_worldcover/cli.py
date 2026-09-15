@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from osm_worldcover.adapters.writer import read_manifest
-from osm_worldcover.build import run_build
+from osm_worldcover.build import ShardStore, run_build
 from osm_worldcover.config import Config
 from osm_worldcover.finalize import StreamedBuild, finalize_shards
 from osm_worldcover.sources import DEFAULT_SOURCE
@@ -96,7 +96,8 @@ def assemble(
         source_revision=revision,
         dataset_version=dataset_version,
     )
-    result = finalize_shards(_gather(shard_dirs, work), config, work, out)
+    combined = _gather(shard_dirs, work)
+    result = finalize_shards(combined, config, work, out, ShardStore(combined).rejections())
     if result.rows == 0:
         typer.echo(f"no rows found in {[str(d) for d in shard_dirs]}", err=True)
         raise typer.Exit(1)
@@ -142,9 +143,12 @@ def _report(result: StreamedBuild) -> None:
 def _gather(shard_dirs: list[Path], work: Path) -> Path:
     """Link every shard into one directory, so assembly sees a single source.
 
-    Names are prefixed with their directory, because two workers can each
-    produce a shard for the same region name. The directory is emptied first so
-    a previous assembly's shards cannot leak into this one.
+    Names are prefixed with the directory's position, because two workers can
+    each produce a file of the same name -- their directories are all called
+    "shards", so the leaf name cannot tell them apart. The directory is emptied
+    first so a previous assembly cannot leak into this one. Each shard's
+    rejection counters travel with it, so a split build still reports why its
+    polygons were refused.
     """
     if len(shard_dirs) == 1:
         return shard_dirs[0]
@@ -153,10 +157,16 @@ def _gather(shard_dirs: list[Path], work: Path) -> Path:
         shutil.rmtree(combined)
     combined.mkdir(parents=True)
     # The directory was just emptied, so no name can already be taken.
-    for directory in shard_dirs:
-        for shard in sorted(Path(directory).glob("*.parquet")):
-            (combined / f"{Path(directory).name}__{shard.name}").symlink_to(shard.resolve())
+    for index, directory in enumerate(shard_dirs):
+        _link_into(combined, Path(directory), f"{index:03d}")
     return combined
+
+
+def _link_into(combined: Path, directory: Path, prefix: str) -> None:
+    """Link one worker's shards and counters into the combined view."""
+    for pattern in ("*.parquet", "*.rejections.json"):
+        for path in sorted(directory.glob(pattern)):
+            (combined / f"{prefix}__{path.name}").symlink_to(path.resolve())
 
 
 @app.command()

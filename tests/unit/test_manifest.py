@@ -150,3 +150,22 @@ def test_a_missing_split_counts_as_zero(counts) -> None:
     counts.polygons = {"train": 5}
     reported = build(counts, settings={})["counts"]["polygons"]
     assert reported == {"train": 5, "validation": 0, "test": 0, "total": 5}
+
+
+def test_an_unspecified_language_is_null_not_the_word_none(counts) -> None:
+    """Regression: a SQL NULL cast with str() published the literal "None".
+
+    Most OSM `description` tags carry no language at all, so this was 95% of a
+    release -- a language code that does not exist, presented as if it did.
+    """
+    counts.language_distribution = {None: 90, "en": 10}
+    languages = build(counts, settings={})["language_distribution"]
+    unspecified = next(entry for entry in languages if entry["language"] is None)
+    assert unspecified["examples"] == 90
+    assert "None" not in {str(entry["language"]) for entry in languages if entry["language"]}
+
+
+def test_an_unspecified_language_still_sorts_by_count(counts) -> None:
+    counts.language_distribution = {None: 5, "en": 90}
+    languages = build(counts, settings={})["language_distribution"]
+    assert [entry["language"] for entry in languages] == ["en", None]

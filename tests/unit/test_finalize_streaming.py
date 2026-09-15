@@ -5,6 +5,8 @@ pass reads shards one at a time and does the global work in DuckDB over files.
 """
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from osm_worldcover.config import Config
@@ -330,3 +332,50 @@ class TestOneRegionPerObject:
         result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
         rows = written(result)
         assert rows["region"].nunique() == 1
+
+
+class TestShardSchemaDrift:
+    """Shards must present one schema, whatever values a region happened to hold.
+
+    Regression: a description-tag region whose rows all lack a language wrote
+    `language` as a NULL-typed Parquet column. DuckDB takes the schema from the
+    first file it reads, so combining that shard with one holding real strings
+    failed with "failed to cast column language from VARCHAR to NULL" — and
+    which file came first decided whether a global build succeeded at all.
+    """
+
+    def _shard_without_language(self, path, n=2, start=100):
+        frame = pd.read_parquet(path) if path.exists() else None
+        assert frame is None
+        shard(path, n=n, start=start)
+        written = pd.read_parquet(path)
+        written["language"] = None
+        written.to_parquet(path, index=False)
+
+    def test_a_shard_with_no_language_still_combines(self, shards, tmp_path) -> None:
+        shard(shards / "with_language.parquet", n=2, start=0)
+        self._shard_without_language(shards / "no_language.parquet")
+        result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
+        assert result.rows == 4
+
+    def test_the_published_language_column_stays_a_string(self, shards, tmp_path) -> None:
+        shard(shards / "with_language.parquet", n=2, start=0)
+        self._shard_without_language(shards / "no_language.parquet")
+        result = finalize_shards(shards, Config(), tmp_path / "work", tmp_path / "work" / "out")
+        split = next(p for p in result.paths if p.name == "train.parquet")
+        field = pq.ParquetFile(split).schema_arrow.field("language")
+        assert pa.types.is_string(field.type) or pa.types.is_large_string(field.type)
+
+    def test_combining_does_not_depend_on_which_shard_is_read_first(self, shards, tmp_path) -> None:
+        """Reversing the names reverses the read order; the result must not move."""
+        shard(shards / "a_with.parquet", n=2, start=0)
+        self._shard_without_language(shards / "z_without.parquet")
+        first = finalize_shards(shards, Config(), tmp_path / "w1", tmp_path / "w1" / "out")
+
+        other = tmp_path / "other"
+        other.mkdir()
+        shard(other / "z_with.parquet", n=2, start=0)
+        self._shard_without_language(other / "a_without.parquet")
+        second = finalize_shards(other, Config(), tmp_path / "w2", tmp_path / "w2" / "out")
+
+        assert first.rows == second.rows

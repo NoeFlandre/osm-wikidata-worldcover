@@ -251,3 +251,65 @@ def test_assemble_does_not_inherit_a_previous_run(tmp_path) -> None:
         cli.app, ["assemble", *dirs, "--out", str(tmp_path / "out"), "--work", str(work)]
     )
     assert outcome.exit_code == 0, outcome.output
+
+
+def test_assemble_reports_rejections_recorded_by_the_builders(tmp_path) -> None:
+    """A split build's counters live beside its shards; assembly must use them."""
+    import json
+
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    shard_file(shards / "a.parquet")
+    (shards / "a.rejections.json").write_text(json.dumps({"below_threshold": 12}))
+    outcome = runner.invoke(
+        cli.app,
+        ["assemble", str(shards), "--out", str(tmp_path / "out"), "--work", str(tmp_path / "work")],
+    )
+    assert outcome.exit_code == 0, outcome.output
+    manifest = json.loads((tmp_path / "out" / "v1.0.0" / "manifest.json").read_text())
+    assert manifest["rejections"] == {"below_threshold": 12}
+
+
+def test_assemble_sums_rejections_across_worker_directories(tmp_path) -> None:
+    import json
+
+    dirs = []
+    for name, count in (("w0", 3), ("w1", 4)):
+        d = tmp_path / name
+        d.mkdir()
+        shard_file(d / f"{name}.parquet", n=2)
+        (d / f"{name}.rejections.json").write_text(json.dumps({"below_threshold": count}))
+        dirs.append(str(d))
+    outcome = runner.invoke(
+        cli.app,
+        ["assemble", *dirs, "--out", str(tmp_path / "out"), "--work", str(tmp_path / "work")],
+    )
+    assert outcome.exit_code == 0, outcome.output
+    manifest = json.loads((tmp_path / "out" / "v1.0.0" / "manifest.json").read_text())
+    assert manifest["rejections"] == {"below_threshold": 7}
+
+
+def test_assemble_combines_directories_that_share_a_leaf_name(tmp_path) -> None:
+    """Every worker's directory is called "shards", so the leaf cannot disambiguate.
+
+    Regression: the combined view prefixed each file with its directory's leaf
+    name, which is identical for every worker, so two files with the same name
+    collided. Disjoint region sets hid it until the per-directory rejection
+    counters -- all named alike -- made it fire.
+    """
+    import json
+
+    dirs = []
+    for name in ("group-0", "group-1"):
+        d = tmp_path / name / "shards"
+        d.mkdir(parents=True)
+        shard_file(d / "same-region.parquet", n=2)
+        (d / "_group-backfill.rejections.json").write_text(json.dumps({"too_large": 1}))
+        dirs.append(str(d))
+    outcome = runner.invoke(
+        cli.app,
+        ["assemble", *dirs, "--out", str(tmp_path / "out"), "--work", str(tmp_path / "work")],
+    )
+    assert outcome.exit_code == 0, outcome.output
+    manifest = json.loads((tmp_path / "out" / "v1.0.0" / "manifest.json").read_text())
+    assert manifest["rejections"] == {"too_large": 2}

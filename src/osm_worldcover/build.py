@@ -6,8 +6,9 @@ peak disk stays near a single raster even though a global run touches
 thousands of them.
 """
 
+import json
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -48,12 +49,30 @@ class ShardStore:
         path = self.path_for(stem)
         return path.exists() and path.stat().st_size > 0
 
-    def write(self, stem: str, frame: pd.DataFrame) -> None:
-        """Record ``stem``'s result, atomically."""
+    def write(
+        self, stem: str, frame: pd.DataFrame, rejections: Mapping[str, int] | None = None
+    ) -> None:
+        """Record ``stem``'s result, atomically, with why its polygons were refused."""
         path = self.path_for(stem)
         partial = path.with_suffix(path.suffix + ".part")
         frame.to_parquet(partial, index=False)
         partial.rename(path)
+        if rejections:
+            self._counters_for(stem).write_text(json.dumps(dict(sorted(rejections.items()))))
+
+    def _counters_for(self, stem: str) -> Path:
+        return self.directory / f"{stem}.rejections.json"
+
+    def rejections(self) -> dict[str, int]:
+        """Sum every recorded counter, over whichever regions recorded one.
+
+        Shards written before counters were recorded simply contribute
+        nothing, so an older scratch directory still assembles.
+        """
+        total: Counter[str] = Counter()
+        for path in sorted(self.directory.glob("*.rejections.json")):
+            total.update(json.loads(path.read_text()))
+        return dict(sorted(total.items()))
 
     def read(self) -> list[pd.DataFrame]:
         """Read every non-empty shard, in a deterministic order."""
@@ -171,7 +190,7 @@ def _process_region(
     else:
         tables = RegionTables.load(raw, stem, config.source_recipe)
     examples, outcome = run_region(config, tables, tiles, keep_tiles=keep_tiles)
-    shards.write(stem, examples)
+    shards.write(stem, examples, dict(outcome.rejections))
     _release_source(raw, stem, config.source_recipe)
     progress(
         f"    {outcome.polygons_seen} polygons -> "
