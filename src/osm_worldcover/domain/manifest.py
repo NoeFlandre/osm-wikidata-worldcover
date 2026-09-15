@@ -63,8 +63,11 @@ def build(counts: DatasetCounts, settings: Mapping[str, Any]) -> dict[str, Any]:
         "language_distribution": [
             {"language": language, "examples": count, "share": _share(count, total)}
             # Most frequent first; ties broken by name so the order is stable.
+            # An absent language sorts last among equals rather than failing to
+            # compare against a string.
             for language, count in sorted(
-                counts.language_distribution.items(), key=lambda kv: (-kv[1], kv[0])
+                counts.language_distribution.items(),
+                key=lambda kv: (-kv[1], kv[0] is None, kv[0] or ""),
             )
         ],
         "example_polygons": [dict(row) for row in counts.example_polygons],

@@ -316,6 +316,28 @@ OUTPUT_COLUMNS: Sequence[str] = (
 )
 
 
+#: Published columns that are text. A region whose rows all lack one of these
+#: would otherwise write it as a NULL-typed Parquet column, and a reader taking
+#: its schema from the first file would then refuse the rest.
+TEXT_COLUMNS: Sequence[str] = (
+    "polygon_id",
+    "osm_type",
+    "region",
+    "name",
+    "wikidata",
+    "document_id",
+    "project",
+    "language",
+    "title",
+    "url",
+    "text",
+    "lead_text",
+    "worldcover_label",
+    "centroid_wkt",
+    "source_pbf",
+)
+
+
 def _shape(examples: pd.DataFrame) -> pd.DataFrame:
     """Add derived columns and project onto the published schema."""
     if len(examples) == 0:

@@ -38,6 +38,7 @@ from osm_worldcover.domain.validation import (
     ValidationReport,
     validate,
 )
+from osm_worldcover.pipeline import TEXT_COLUMNS
 
 __all__ = ["StreamedBuild", "finalize_shards"]
 
@@ -105,6 +106,7 @@ def _enrich_shards(shard_dir: Path, enriched: Path, config: Config) -> int:
             continue
         frame = _assign_splits(frame, config, ratios)
         frame = _attach_provenance(frame, config)
+        frame = _with_stable_text_types(frame)
         frame["_dedup_key"] = [
             dedup_key(text, str(code))
             for text, code in zip(frame["text"], frame["worldcover_code"], strict=True)
@@ -112,6 +114,19 @@ def _enrich_shards(shard_dir: Path, enriched: Path, config: Config) -> int:
         frame.to_parquet(enriched / path.name, index=False)
         total += len(frame)
     return total
+
+
+def _with_stable_text_types(frame: pd.DataFrame) -> pd.DataFrame:
+    """Give every text column the same dtype in every shard.
+
+    A region can legitimately hold no value at all for a text column -- an OSM
+    ``description`` tag carries no language, for instance. Pandas then writes
+    that column as NULL-typed, and a reader that takes its schema from
+    whichever file it opened first will refuse the shards that do hold strings.
+    Pinning the dtype makes the combined read independent of file order.
+    """
+    present = [column for column in TEXT_COLUMNS if column in frame.columns]
+    return frame.astype({column: "string" for column in present})
 
 
 def _assign_splits(
@@ -265,7 +280,7 @@ def _aggregate(
         polygons=_by_split(connection, "count(DISTINCT polygon_id)"),
         documents=_by_split(connection, "count(DISTINCT document_id)"),
         class_distribution=_tally(connection, "worldcover_code", int),
-        language_distribution=_tally(connection, "language", str),
+        language_distribution=_tally(connection, "language", _language_key),
         example_polygons=_example_polygons(connection),
         dominant_fraction_quantiles={
             "p50": round(float(quantiles[0]), 6),
@@ -310,6 +325,15 @@ def _by_split(connection: Any, expression: str) -> dict[str, int]:
     """Evaluate ``expression`` per split."""
     rows = connection.execute(f"SELECT split, {expression} FROM kept GROUP BY 1").fetchall()
     return {str(split): int(value) for split, value in rows}
+
+
+def _language_key(value: Any) -> str | None:
+    """Keep an absent language absent.
+
+    Most OSM ``description`` tags declare no language, and ``str(None)`` would
+    publish the literal "None" as if it were a language code.
+    """
+    return None if value is None else str(value)
 
 
 def _tally(connection: Any, column: str, cast: Any) -> dict[Any, int]:
